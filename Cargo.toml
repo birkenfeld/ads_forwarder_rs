@@ -1,0 +1,22 @@
+[package]
+name = "ads_forwarder_rs"
+version = "0.1.0"
+authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
+description = "Forwarder for Beckhoff TCP/UDP connections."
+
+[[bin]]
+name = "ads_forwarder_rs"
+path = "src/main.rs"
+
+[dependencies]
+parking_lot = "*"
+crossbeam-channel = { git = "https://github.com/crossbeam-rs/crossbeam-channel" }
+byteorder = "*"
+structopt = "*"
+structopt-derive = "*"
+interfaces = "*"
+itertools = "*"
+structure = "*"
+mlzlog = "*"
+log = "*"
+net2 = "*"
