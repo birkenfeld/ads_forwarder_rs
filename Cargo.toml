@@ -10,11 +10,12 @@ path = "src/main.rs"
 
 [dependencies]
 parking_lot = "*"
-crossbeam-channel = { git = "https://github.com/crossbeam-rs/crossbeam-channel" }
+crossbeam-channel = "*"
 byteorder = "*"
 structopt = "*"
 structopt-derive = "*"
-interfaces = "*"
+# use master until 32bit fix is released
+interfaces = { git = "https://github.com/andrew-d/interfaces-rs" }
 itertools = "*"
 structure = "*"
 mlzlog = "*"

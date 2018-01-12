@@ -457,7 +457,7 @@ impl Forwarder {
     }
 
     fn add_route<R: AsRef<[u8]>>(bh: &Beckhoff, netid: &AmsNetId, name: R) -> FwdResult {
-        let cx_route_struct = structure!("<I4xI6SHIHH10sHH6SHH14sHHsHH12sHHI");
+        let cx_route_struct = structure!("<I4xI6SHIHH10sHH6SHH14sHHsHH16sHHI");
         let cx_route_result_struct = structure!("<I4xI12xH2xI");
         let msg = cx_route_struct.pack(
             BECKHOFF_UDP_MAGIC, 6, &netid.0, 10000, 6,
@@ -465,7 +465,7 @@ impl Forwarder {
             0x07, 0x06, &netid.0,
             0x0d, 0x0e, b"Administrator",
             0x02, 0x01, b"",
-            0x05, 0x0c, format!("{}", bh.if_addr).as_bytes(),
+            0x05, 0x10, format!("{}", bh.if_addr).as_bytes(),
             0x09, 0x04, 1
         ).unwrap();
 
