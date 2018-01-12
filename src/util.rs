@@ -32,6 +32,9 @@ pub const BECKHOFF_TCP_PORT:    u16 = 48898; // 0xBF02
 pub const BECKHOFF_UDP_PORT:    u16 = 48899; // 0xBF03
 pub const BECKHOFF_UDP_MAGIC:   u32 = 0x71146603;
 
+pub const FWDER_NETID: AmsNetId = AmsNetId([10, 1, 0, 0, 1, 1]);
+pub const DUMMY_NETID: AmsNetId = AmsNetId([1, 1, 1, 1, 1, 1]);
+
 
 fn printable(ch: &u8) -> char {
     if *ch >= 32 && *ch <= 127 { *ch as char } else { '.' }

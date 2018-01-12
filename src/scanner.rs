@@ -25,20 +25,9 @@ use std::collections::HashMap;
 use std::net::{UdpSocket, Ipv4Addr};
 use std::time::Duration;
 
-use util::{AmsNetId, hexdump, force_ipv4, in_same_net,
+use forwarder::Beckhoff;
+use util::{AmsNetId, hexdump, force_ipv4, in_same_net, FWDER_NETID,
            BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_MAGIC, BECKHOFF_UDP_PORT};
-
-const DUMMY_NETID: &[u8] = &[10, 0, 0, 1, 1, 1];
-
-
-
-#[derive(Clone)]
-pub struct Beckhoff {
-    pub if_addr: Ipv4Addr,
-    pub box_addr: Ipv4Addr,
-    pub netid: AmsNetId,
-    pub is_bc: bool,
-}
 
 
 pub struct Scanner {
@@ -69,7 +58,7 @@ impl Scanner {
         }
 
         // scan for CXs: "identify" operation
-        let cx_msg = cx_scan_struct.pack(BECKHOFF_UDP_MAGIC, 1, DUMMY_NETID, 10000).unwrap();
+        let cx_msg = cx_scan_struct.pack(BECKHOFF_UDP_MAGIC, 1, &FWDER_NETID.0, 10000).unwrap();
         udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
         if self.dump {
             info!("scan: {} bytes for CX scan", bc_msg.len());
