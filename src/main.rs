@@ -33,16 +33,16 @@ extern crate structopt_derive;
 #[macro_use]
 extern crate structure;
 
+use std::{net, process};
+use structopt::StructOpt;
+
 mod scanner;
 mod forwarder;
 mod util;
 
-use std::net::Ipv4Addr;
-use std::process;
-use std::collections::HashMap;
-use structopt::StructOpt;
+use scanner::{Scan, Scanner};
 
-
+/// Used to define and parse command line options.
 #[derive(StructOpt)]
 pub struct Options {
     #[structopt(short="F", long="forward", help="Forward connections (only scan otherwise)")]
@@ -63,26 +63,22 @@ fn main() {
     let opts = Options::from_args();
     mlzlog::init(None::<&str>, "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
 
-    // determine IPv4 addresses of all interfaces in the system
-    let if_addrs = interfaces::Interface::get_all().unwrap().into_iter().filter_map(|iface| {
-        util::ipv4_addr(&iface.addresses).map(|addr| (iface.name.clone(), addr))
-    }).collect::<HashMap<_, _>>();
-
     // check out what argument was given (interface, IP address, NetID),
     // and scan for Beckhoffs an their NetIDs
-    let scanner = scanner::Scanner { dump: opts.verbosity >= 2, if_addrs };
+    let scanner = Scanner::new(opts.verbosity >= 2);
     let mut beckhoffs = if let Some(&(ifaddr, _)) = scanner.if_addrs.get(&opts.arg) {
         debug!("scanning interface {}", opts.arg);
-        scanner.scan(Some(ifaddr), None)
-    } else if let Ok(addr) = opts.arg.parse::<Ipv4Addr>() {
+        scanner.scan(Scan::Interface(ifaddr))
+    } else if let Ok(addr) = opts.arg.parse::<net::Ipv4Addr>() {
         debug!("scanning IP address {}", addr);
-        scanner.scan(None, Some(addr))
+        scanner.scan(Scan::Address(addr))
     } else if let Ok(netid) = opts.arg.parse::<util::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
-        scanner.scan(None, None).into_iter().filter(|b| b.netid == netid).collect()
+        // scan all possible Beckhoffs and filter out the matching one
+        scanner.scan(Scan::Everything).into_iter().filter(|b| b.netid == netid).collect()
     } else if opts.arg.is_empty() {
         debug!("scanning everything");
-        scanner.scan(None, None)
+        scanner.scan(Scan::Everything)
     } else {
         error!("argument must be a valid interface, IP or NetID");
         process::exit(1);

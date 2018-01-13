@@ -26,8 +26,16 @@ use std::net::{UdpSocket, Ipv4Addr};
 use std::time::Duration;
 
 use forwarder::Beckhoff;
-use util::{AmsNetId, hexdump, force_ipv4, in_same_net, FWDER_NETID,
+use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_NETID,
            BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_MAGIC, BECKHOFF_UDP_PORT};
+
+
+/// Determines what to scan.
+pub enum Scan {
+    Everything,
+    Interface(Ipv4Addr),
+    Address(Ipv4Addr),
+}
 
 
 pub struct Scanner {
@@ -36,15 +44,37 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    fn scan_inner(&self, if_addr: Option<Ipv4Addr>, bh_addr: Option<Ipv4Addr>)
-                  -> Result<Vec<Beckhoff>, Box<Error>> {
+    pub fn new(dump: bool) -> Scanner {
+        Scanner { dump, if_addrs: find_ipv4_addrs() }
+    }
+
+    /// Scan the locally reachable network for Beckhoffs.
+    ///
+    /// If given a `Scan::Interface`, only IPs on that interface are scanned.
+    /// If given a `Scan::Address`, only that IP is scanned.
+    ///
+    /// Returns a vector of found Beckhoffs.
+    pub fn scan(&self, what: Scan) -> Vec<Beckhoff> {
+        match self.scan_inner(what) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("during scan: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    fn scan_inner(&self, what: Scan) -> Result<Vec<Beckhoff>, Box<Error>> {
         let bc_scan_struct = structure!("<IHHHHHH");
         let bc_scan_result_struct = structure!("<I6x6S6x20s");
         let cx_scan_struct = structure!("<I4xI6SH4x");
         let cx_scan_result_struct = structure!("<I4xI6S6xH2x10s280xH2xBBH");
 
-        let bind_addr = if_addr.unwrap_or([0, 0, 0, 0].into());
-        let send_addr = bh_addr.unwrap_or([255, 255, 255, 255].into());
+        let (bind_addr, send_addr) = match what {
+            Scan::Everything => ([0, 0, 0, 0].into(), [255, 255, 255, 255].into()),
+            Scan::Interface(addr) => (addr, [255, 255, 255, 255].into()),
+            Scan::Address(addr) => ([0, 0, 0, 0].into(), addr),
+        };
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;
@@ -57,7 +87,7 @@ impl Scanner {
             hexdump(&bc_msg);
         }
 
-        // scan for CXs: "identify" operation
+        // scan for CXs: "identify" operation in the UDP protocol
         let cx_msg = cx_scan_struct.pack(BECKHOFF_UDP_MAGIC, 1, &FWDER_NETID.0, 10000).unwrap();
         udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
         if self.dump {
@@ -74,7 +104,7 @@ impl Scanner {
                 info!("scan: reply from {}", reply_addr);
                 hexdump(reply);
             }
-            let bh_addr = force_ipv4(reply_addr.ip());
+            let bh_addr = unwrap_ipv4(reply_addr.ip());
             if reply_addr.port() == BECKHOFF_BC_UDP_PORT {
                 if let Ok((_, netid, name)) = bc_scan_result_struct.unpack(reply) {
                     let netid = AmsNetId::from_slice(&netid);
@@ -105,15 +135,5 @@ impl Scanner {
             }
         }
         panic!("Did not find local interface address for Beckhoff {}?!", bh_addr);
-    }
-
-    pub fn scan(&self, if_addr: Option<Ipv4Addr>, bh_addr: Option<Ipv4Addr>) -> Vec<Beckhoff> {
-        match self.scan_inner(if_addr, bh_addr) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("error during scan: {}", e);
-                Vec::new()
-            }
-        }
     }
 }

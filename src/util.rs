@@ -20,6 +20,7 @@
 //
 // *****************************************************************************
 
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
@@ -40,6 +41,7 @@ fn printable(ch: &u8) -> char {
     if *ch >= 32 && *ch <= 127 { *ch as char } else { '.' }
 }
 
+/// Print a hexdump of a byte slice in the usual format.
 pub fn hexdump(mut data: &[u8]) {
     let mut addr = 0;
     while !data.is_empty() {
@@ -54,33 +56,46 @@ pub fn hexdump(mut data: &[u8]) {
     println!();
 }
 
-pub fn force_ipv4(addr: IpAddr) -> Ipv4Addr {
+/// Extract the Ipv4Addr from the given IpAddr.
+pub fn unwrap_ipv4(addr: IpAddr) -> Ipv4Addr {
     match addr {
         IpAddr::V6(_) => panic!("IPv4 address required"),
         IpAddr::V4(ip) => ip
     }
 }
 
+/// Determine if two addresses are in the same network, determined by a netmask.
 pub fn in_same_net<T: Into<u32>>(addr1: T, addr2: T, netmask: T) -> bool {
     let (addr1, addr2, netmask) = (addr1.into(), addr2.into(), netmask.into());
     addr1 & netmask == addr2 & netmask
 }
 
-pub fn ipv4_addr(addresses: &[interfaces::Address]) -> Option<(Ipv4Addr, Ipv4Addr)> {
+/// Find the IPv4 address and netmask in the given list of addresses.
+fn ipv4_addr(addresses: &[interfaces::Address]) -> Option<(Ipv4Addr, Ipv4Addr)> {
     addresses.iter().find(|ad| ad.kind == interfaces::Kind::Ipv4)
-                    .map(|ad| (force_ipv4(ad.addr.unwrap().ip()),
-                               force_ipv4(ad.mask.unwrap().ip())))
+                    .map(|ad| (unwrap_ipv4(ad.addr.unwrap().ip()),
+                               unwrap_ipv4(ad.mask.unwrap().ip())))
+}
+
+/// Determine IPv4 addresses of all interfaces in the system.
+pub fn find_ipv4_addrs() -> HashMap<String, (Ipv4Addr, Ipv4Addr)> {
+    interfaces::Interface::get_all().unwrap().into_iter().filter_map(|iface| {
+        ipv4_addr(&iface.addresses).map(|addr| (iface.name.clone(), addr))
+    }).collect()
 }
 
 
+/// Represents an AMS NetID.
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct AmsNetId(pub [u8; 6]);
 
 impl AmsNetId {
-    pub fn is_empty(&self) -> bool {
+    /// Check if the NetID is all-zero.
+    pub fn is_zero(&self) -> bool {
         self.0 == [0, 0, 0, 0, 0, 0]
     }
 
+    /// Create a NetID from a slice (which must have length 6).
     pub fn from_slice(slice: &[u8]) -> Self {
         debug_assert!(slice.len() == 6);
         let mut arr = [0; 6];
@@ -92,8 +107,10 @@ impl AmsNetId {
 impl FromStr for AmsNetId {
     type Err = &'static str;
 
+    /// Parse a NetID from a string (a.b.c.d.e.f).
+    ///
+    /// Bytes can be missing in the end; missing bytes are substituted by 1.
     fn from_str(s: &str) -> Result<AmsNetId, &'static str> {
-        // Not given parts of NetID default to "1"
         let mut arr = [1; 6];
         for (i, part) in s.split('.').enumerate() {
             match (arr.get_mut(i), part.parse()) {
@@ -111,12 +128,14 @@ impl Display for AmsNetId {
     }
 }
 
+
+/// Represents an ADS message.
 pub struct AdsMessage(pub Vec<u8>);
 
 impl AdsMessage {
-    pub fn new(msg: Vec<u8>) -> AdsMessage {
+    pub fn from_bytes(msg: Vec<u8>) -> AdsMessage {
         let msg = AdsMessage(msg);
-        // XXX expand checks
+        // todo: could expand checks here
         assert!(msg.length() == msg.0.len());
         msg
     }
