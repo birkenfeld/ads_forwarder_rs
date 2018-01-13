@@ -36,7 +36,7 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    fn scan_inner(&self, if_addr: Option<Ipv4Addr>, box_addr: Option<Ipv4Addr>)
+    fn scan_inner(&self, if_addr: Option<Ipv4Addr>, bh_addr: Option<Ipv4Addr>)
                   -> Result<Vec<Beckhoff>, Box<Error>> {
         let bc_scan_struct = structure!("<IHHHHHH");
         let bc_scan_result_struct = structure!("<I6x6S6x20s");
@@ -44,7 +44,7 @@ impl Scanner {
         let cx_scan_result_struct = structure!("<I4xI6S6xH2x10s280xH2xBBH");
 
         let bind_addr = if_addr.unwrap_or([0, 0, 0, 0].into());
-        let send_addr = box_addr.unwrap_or([255, 255, 255, 255].into());
+        let send_addr = bh_addr.unwrap_or([255, 255, 255, 255].into());
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;
@@ -53,7 +53,7 @@ impl Scanner {
         let bc_msg = bc_scan_struct.pack(1, 0, 0x21, 3, 100, 4, 10).unwrap();
         udp.send_to(&bc_msg, (send_addr, BECKHOFF_BC_UDP_PORT))?;
         if self.dump {
-            info!("scan: {} bytes for BC scan", bc_msg.len());
+            debug!("scan: {} bytes for BC scan", bc_msg.len());
             hexdump(&bc_msg);
         }
 
@@ -61,27 +61,27 @@ impl Scanner {
         let cx_msg = cx_scan_struct.pack(BECKHOFF_UDP_MAGIC, 1, &FWDER_NETID.0, 10000).unwrap();
         udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
         if self.dump {
-            info!("scan: {} bytes for CX scan", bc_msg.len());
+            debug!("scan: {} bytes for CX scan", bc_msg.len());
             hexdump(&cx_msg);
         }
 
         // wait for replies
-        let mut boxes = Vec::new();
+        let mut beckhoffs = Vec::new();
         let mut reply = [0; 2048];
-        while let Ok((len, bh_addr)) = udp.recv_from(&mut reply) {
+        while let Ok((len, reply_addr)) = udp.recv_from(&mut reply) {
             let reply = &reply[..len];
             if self.dump {
-                info!("scan: reply from {}", bh_addr);
+                info!("scan: reply from {}", reply_addr);
                 hexdump(reply);
             }
-            let box_addr = force_ipv4(bh_addr.ip());
-            if bh_addr.port() == BECKHOFF_BC_UDP_PORT {
+            let bh_addr = force_ipv4(reply_addr.ip());
+            if reply_addr.port() == BECKHOFF_BC_UDP_PORT {
                 if let Ok((_, netid, name)) = bc_scan_result_struct.unpack(reply) {
                     let netid = AmsNetId::from_slice(&netid);
                     info!("scan: found {} ({}) at {}",
-                          String::from_utf8_lossy(&name), netid, box_addr);
-                    boxes.push(Beckhoff { if_addr: self.find_if_addr(box_addr),
-                                          is_bc: true, box_addr, netid });
+                          String::from_utf8_lossy(&name), netid, bh_addr);
+                    beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
+                                              is_bc: true, bh_addr, netid });
                 }
             } else if let Ok(info) = cx_scan_result_struct.unpack(reply) {
                 let (magic, header, netid, name_id, name, ver_id, ver_maj, ver_min, ver_patch) = info;
@@ -89,26 +89,26 @@ impl Scanner {
                     let netid = AmsNetId::from_slice(&netid);
                     info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                           String::from_utf8_lossy(&name), ver_maj, ver_min, ver_patch,
-                          netid, box_addr);
-                    boxes.push(Beckhoff { if_addr: self.find_if_addr(box_addr),
-                                          is_bc: false, box_addr, netid });
+                          netid, bh_addr);
+                    beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
+                                              is_bc: false, bh_addr, netid });
                 }
             }
         }
-        Ok(boxes)
+        Ok(beckhoffs)
     }
 
-    fn find_if_addr(&self, box_addr: Ipv4Addr) -> Ipv4Addr {
+    fn find_if_addr(&self, bh_addr: Ipv4Addr) -> Ipv4Addr {
         for &(if_addr, if_mask) in self.if_addrs.values() {
-            if in_same_net(box_addr, if_addr, if_mask) {
+            if in_same_net(bh_addr, if_addr, if_mask) {
                 return if_addr;
             }
         }
-        panic!("Did not find interface address for local box {}?!", box_addr);
+        panic!("Did not find local interface address for Beckhoff {}?!", bh_addr);
     }
 
-    pub fn scan(&self, if_addr: Option<Ipv4Addr>, box_addr: Option<Ipv4Addr>) -> Vec<Beckhoff> {
-        match self.scan_inner(if_addr, box_addr) {
+    pub fn scan(&self, if_addr: Option<Ipv4Addr>, bh_addr: Option<Ipv4Addr>) -> Vec<Beckhoff> {
+        match self.scan_inner(if_addr, bh_addr) {
             Ok(v) => v,
             Err(e) => {
                 error!("error during scan: {}", e);

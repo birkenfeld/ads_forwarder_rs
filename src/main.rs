@@ -61,7 +61,7 @@ pub struct Options {
 
 fn main() {
     let opts = Options::from_args();
-    mlzlog::init(".", "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
+    mlzlog::init(None::<&str>, "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
 
     // determine IPv4 addresses of all interfaces in the system
     let if_addrs = interfaces::Interface::get_all().unwrap().into_iter().filter_map(|iface| {
@@ -69,16 +69,16 @@ fn main() {
     }).collect::<HashMap<_, _>>();
 
     // check out what argument was given (interface, IP address, NetID),
-    // and scan for boxes an their NetIDs
+    // and scan for Beckhoffs an their NetIDs
     let scanner = scanner::Scanner { dump: opts.verbosity >= 2, if_addrs };
-    let mut boxes = if let Some(&(ifaddr, _)) = scanner.if_addrs.get(&opts.arg) {
-        debug!("using interface {}", opts.arg);
+    let mut beckhoffs = if let Some(&(ifaddr, _)) = scanner.if_addrs.get(&opts.arg) {
+        debug!("scanning interface {}", opts.arg);
         scanner.scan(Some(ifaddr), None)
     } else if let Ok(addr) = opts.arg.parse::<Ipv4Addr>() {
-        debug!("using IP address {}", addr);
+        debug!("scanning IP address {}", addr);
         scanner.scan(None, Some(addr))
     } else if let Ok(netid) = opts.arg.parse::<util::AmsNetId>() {
-        debug!("using AMS NetId {}", netid);
+        debug!("scanning for AMS NetId {}", netid);
         scanner.scan(None, None).into_iter().filter(|b| b.netid == netid).collect()
     } else if opts.arg.is_empty() {
         debug!("scanning everything");
@@ -89,12 +89,12 @@ fn main() {
     };
 
     if opts.forward {
-        // ensure that we have only a single box left to talk to
-        if boxes.len() != 1 {
-            error!("did not find exactly one Beckhoff, exiting");
+        // ensure that we have only a single Beckhoff left to talk to
+        if beckhoffs.len() != 1 {
+            error!("did not find exactly one Beckhoff for forwarding, exiting");
             process::exit(1);
         }
-        if let Err(e) = forwarder::Forwarder::new(opts, boxes.pop().unwrap()).run() {
+        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
             error!("while running forwarder: {}", e);
         }
     }
