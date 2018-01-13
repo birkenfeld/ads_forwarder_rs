@@ -73,7 +73,7 @@ impl Beckhoff {
         let mut reply = [0; 2048];
         let (len, _) = sock.recv_from(&mut reply)?;
         let (_, items) = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
-        if items[&UdpMessage::STATUS] != &[0, 0, 0, 0] {
+        if items.get(&UdpMessage::STATUS) != Some(&&[0, 0, 0, 0][..]) {
             Err("status of ADD_ROUTE not ok")?;
         }
         Ok(())
@@ -164,15 +164,8 @@ impl Distributor {
     /// NetID is set to a known dummy value.
     fn run_keepalive(&self, sock: &TcpStream) -> FwdResult<()> {
         let mut bh_sock = sock.try_clone()?;
-        let ads_msg_struct = structure!("<2xI6xH6xHHH12x");
-        let mut msg = AdsMessage(ads_msg_struct.pack(32, // length
-                                                     10000, // dest port
-                                                     40001, // src port
-                                                     1, // devinfo cmd
-                                                     4, // it's a command
-        ).unwrap());
-        msg.patch_dest_id(&self.bh.netid);
-        msg.patch_source_id(&DUMMY_NETID);
+        let msg = AdsMessage::new(&self.bh.netid, 10000, &DUMMY_NETID, 40001,
+                                  AdsMessage::DEVINFO, &[]);
 
         spawn("keepalive", move || loop {
             mlzlog::set_thread_prefix("TCP: ".into());

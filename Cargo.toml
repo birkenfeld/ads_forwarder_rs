@@ -16,6 +16,5 @@ structopt-derive = "*"
 # use master until 32bit fix is released
 interfaces = { git = "https://github.com/andrew-d/interfaces-rs" }
 itertools = "*"
-structure = "*"
 mlzlog = "*"
 log = "*"

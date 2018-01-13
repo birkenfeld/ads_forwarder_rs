@@ -38,8 +38,6 @@ extern crate itertools;
 extern crate crossbeam_channel as channel;
 #[macro_use]
 extern crate structopt_derive;
-#[macro_use]
-extern crate structure;
 
 use std::{net, process};
 use structopt::StructOpt;

@@ -142,6 +142,23 @@ impl AdsMessage {
         msg
     }
 
+    pub const DEVINFO: u16 = 1;
+
+    pub fn new(dst: &AmsNetId, dstport: u16, src: &AmsNetId, srcport: u16,
+               cmd: u16, data: &[u8]) -> AdsMessage {
+        let mut v = vec![0; 2];
+        v.write_u32::<LE>(32 + data.len() as u32).unwrap();
+        v.write_all(&dst.0).unwrap();
+        v.write_u16::<LE>(dstport).unwrap();
+        v.write_all(&src.0).unwrap();
+        v.write_u16::<LE>(srcport).unwrap();
+        v.write_u16::<LE>(cmd).unwrap();
+        v.write_u16::<LE>(4).unwrap();
+        v.write_u32::<LE>(data.len() as u32).unwrap();
+        v.write_u64::<LE>(0).unwrap(); // Error-code + Invoke-ID
+        AdsMessage(v)
+    }
+
     pub fn length(&self) -> usize {
         6 + LE::read_u32(&self.0[2..6]) as usize
     }

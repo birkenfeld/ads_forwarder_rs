@@ -87,15 +87,14 @@ impl Scanner {
 
     fn scan_addr(&self, bind_addr: Ipv4Addr, send_addr: Ipv4Addr, single_reply: bool)
                  -> Result<Vec<Beckhoff>, Box<Error>> {
-        let bc_scan_struct = structure!("<IHHHHHH");
-        let bc_scan_result_struct = structure!("<I6x6S6x20s");
-
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;
 
-        // scan for BCs: request 3 words from 0:21 (NetID) and 10 words from 100:4 (Name)
-        let bc_msg = bc_scan_struct.pack(1, 0, 0x21, 3, 100, 4, 10).unwrap();
+        // scan for BCs: request 3 words from 0:33 (NetID) and 10 words from 100:4 (Name)
+        let bc_msg = [1, 0, 0, 0,
+                      0, 0, 33, 0, 3, 0,
+                      100, 0, 4, 0, 10, 0];
         udp.send_to(&bc_msg, (send_addr, BECKHOFF_BC_UDP_PORT))?;
         debug!("scan: sending BC UDP packet");
         if self.dump {
@@ -121,17 +120,19 @@ impl Scanner {
             }
             let bh_addr = unwrap_ipv4(reply_addr.ip());
             if reply_addr.port() == BECKHOFF_BC_UDP_PORT {
-                if let Ok((_, netid, name)) = bc_scan_result_struct.unpack(reply) {
-                    let netid = AmsNetId::from_slice(&netid);
-                    info!("scan: found {} ({}) at {}",
-                          String::from_utf8_lossy(&name), netid, bh_addr);
+                if reply.len() == 42 && reply[0..4] == [1, 0, 0, 0x80] {
+                    let netid = AmsNetId::from_slice(&reply[10..16]);
+                    let name = &reply[22..32];
+                    let name = String::from_utf8_lossy(
+                        &name[..name.iter().position(|&ch| ch == 0).unwrap_or(10)]);
+                    info!("scan: found {} ({}) at {}", name, netid, bh_addr);
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               is_bc: true, bh_addr, netid });
                 }
             } else if let Ok((netid, info)) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
-                let name = info[&UdpMessage::HOST];
+                let name = info.get(&UdpMessage::HOST).ok_or("no host info")?;
                 let name = String::from_utf8_lossy(&name[..name.len() - 1]);
-                let ver = info[&UdpMessage::VERSION];
+                let ver = info.get(&UdpMessage::VERSION).ok_or("no version info")?;
                 info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
                       netid, bh_addr);
