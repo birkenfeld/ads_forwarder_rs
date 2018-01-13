@@ -20,6 +20,14 @@
 //
 // *****************************************************************************
 
+// Use the system allocator instead of jemalloc.
+// This allows us to build with the i586 target on Debian 7.
+#![feature(alloc_system, global_allocator, allocator_api)]
+extern crate alloc_system;
+use alloc_system::System;
+#[global_allocator]
+static A: System = System;
+
 #[macro_use]
 extern crate log;
 extern crate mlzlog;
