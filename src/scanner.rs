@@ -69,21 +69,29 @@ impl Scanner {
     }
 
     fn scan_inner(&self, what: Scan) -> Result<Vec<Beckhoff>, Box<Error>> {
+        let broadcast = [255, 255, 255, 255].into();
+        match what {
+            Scan::Address(bh_addr) =>
+                self.scan_addr([0, 0, 0, 0].into(), bh_addr, true),
+            Scan::Interface(if_name) =>
+                self.scan_addr(self.if_addrs[if_name].0, broadcast, false),
+            Scan::Everything => {
+                let mut all = Vec::new();
+                for &(if_addr, _) in self.if_addrs.values() {
+                    all.extend(self.scan_addr(if_addr, broadcast, false)?);
+                }
+                Ok(all)
+            }
+        }
+    }
+
+    fn scan_addr(&self, bind_addr: Ipv4Addr, send_addr: Ipv4Addr, single_reply: bool)
+                 -> Result<Vec<Beckhoff>, Box<Error>> {
         let bc_scan_struct = structure!("<IHHHHHH");
         let bc_scan_result_struct = structure!("<I6x6S6x20s");
         let cx_scan_struct = structure!("<I4xI6SH4x");
         let cx_scan_result_struct = structure!("<I4xI6S6xH2x10s280xH2xBBH");
 
-        let (bind_addr, send_addr) = match what {
-            Scan::Everything =>
-                ([0, 0, 0, 0].into(), [255, 255, 255, 255].into()),
-            // unfortunately, we have to broadcast to 255.255.255.255 here
-            // since BCs do not respond to broadcasts on a subnet 
-            Scan::Interface(if_name) =>
-                (self.if_addrs[if_name].0, [255, 255, 255, 255].into()),
-            Scan::Address(bh_addr) =>
-                ([0, 0, 0, 0].into(), bh_addr),
-        };
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;
@@ -132,6 +140,10 @@ impl Scanner {
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               is_bc: false, bh_addr, netid });
                 }
+            }
+            // if scanning a single address, don't wait for more replies
+            if single_reply {
+                break;
             }
         }
         Ok(beckhoffs)
