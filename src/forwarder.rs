@@ -394,13 +394,6 @@ impl Forwarder {
 
     /// Run the TCP listener, sending new client connections to the given channel.
     fn run_tcp_listener(&mut self, conn_tx: Sender<TcpStream>) -> FwdResult<()> {
-        // add route to ourselves
-        if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
-            error!("could not add forwarder route to Beckhoff: {}", e);
-        } else {
-            info!("added forwarder route to Beckhoff successfully");
-        }
-
         // listen for incoming connections
         let srv_sock = TcpListener::bind(("0.0.0.0", BECKHOFF_TCP_PORT))?;
         info!("TCP: bound to {}", srv_sock.local_addr()?);
@@ -415,8 +408,15 @@ impl Forwarder {
 
     /// Run the whole forwarder.
     pub fn run(&mut self) -> FwdResult<()> {
+        // add route to ourselves - without it, TCP connections are
+        // closed immediately
+        if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
+            Err(format!("TCP: while adding backroute: {}", e))?;
+        }
+        // start UDP forwarding
         self.run_udp("UDP-BC", BECKHOFF_BC_UDP_PORT)?;
         self.run_udp("UDP", BECKHOFF_UDP_PORT)?;
+        // start TCP forwarding
         let (conn_tx, conn_rx) = channel::unbounded();
         self.run_tcp_distributor(conn_rx);
         self.run_tcp_listener(conn_tx)?;

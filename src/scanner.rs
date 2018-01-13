@@ -97,16 +97,16 @@ impl Scanner {
         // scan for BCs: request 3 words from 0:21 (NetID) and 10 words from 100:4 (Name)
         let bc_msg = bc_scan_struct.pack(1, 0, 0x21, 3, 100, 4, 10).unwrap();
         udp.send_to(&bc_msg, (send_addr, BECKHOFF_BC_UDP_PORT))?;
+        debug!("scan: sending BC UDP packet");
         if self.dump {
-            debug!("scan: {} bytes for BC scan", bc_msg.len());
             hexdump(&bc_msg);
         }
 
         // scan for CXs: "identify" operation in the UDP protocol
         let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000, 0);
         udp.send_to(&cx_msg.0, (send_addr, BECKHOFF_UDP_PORT))?;
+        debug!("scan: sending CX UDP packet");
         if self.dump {
-            debug!("scan: {} bytes for CX scan", bc_msg.len());
             hexdump(&cx_msg.0);
         }
 
