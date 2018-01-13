@@ -9,7 +9,6 @@ name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-parking_lot = "*"
 crossbeam-channel = "*"
 byteorder = "*"
 structopt = "*"
@@ -20,4 +19,3 @@ itertools = "*"
 structure = "*"
 mlzlog = "*"
 log = "*"
-net2 = "*"
