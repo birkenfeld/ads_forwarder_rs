@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::net::{UdpSocket, Ipv4Addr};
 use std::time::Duration;
 
-use forwarder::Beckhoff;
+use forwarder::{Beckhoff, BhType};
 use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_NETID,
            BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT, UdpMessage};
 
@@ -102,7 +102,7 @@ impl Scanner {
         }
 
         // scan for CXs: "identify" operation in the UDP protocol
-        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000, 0);
+        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000);
         udp.send_to(&cx_msg.0, (send_addr, BECKHOFF_UDP_PORT))?;
         debug!("scan: sending CX UDP packet");
         if self.dump {
@@ -127,7 +127,7 @@ impl Scanner {
                         &name[..name.iter().position(|&ch| ch == 0).unwrap_or(10)]);
                     info!("scan: found {} ({}) at {}", name, netid, bh_addr);
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
-                                              is_bc: true, bh_addr, netid });
+                                              typ: BhType::BC, bh_addr, netid });
                 }
             } else if let Ok((netid, info)) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
                 let name = info.get(&UdpMessage::HOST).ok_or("no host info")?;
@@ -137,7 +137,8 @@ impl Scanner {
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
                       netid, bh_addr);
                 beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
-                                          is_bc: false, bh_addr, netid });
+                                          typ: if ver[0] == 2 { BhType::CX2 } else { BhType::CX3 },
+                                          bh_addr, netid });
             }
             // if scanning a single address, don't wait for more replies
             if single_reply {

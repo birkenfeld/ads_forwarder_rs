@@ -42,29 +42,39 @@ fn spawn<F: Send + 'static + FnOnce()>(name: &str, f: F) {
 }
 
 
+#[derive(Clone, PartialEq)]
+pub enum BhType {
+    BC,  // BC91xx
+    CX2, // CX with TwinCat 2
+    CX3, // CX with TwinCat 3
+}
+
 #[derive(Clone)]
 pub struct Beckhoff {
     pub if_addr: Ipv4Addr,
     pub bh_addr: Ipv4Addr,
     pub netid: AmsNetId,
-    pub is_bc: bool,
+    pub typ: BhType,
 }
 
 impl Beckhoff {
     /// Add a route on the Beckhoff, to `netid` via our interface address.
     fn add_route(&self, netid: &AmsNetId, name: &str) -> FwdResult<()> {
-        if self.is_bc {
+        if self.typ == BhType::BC {
             // no routes necessary on BCs
             return Ok(());
         }
 
-        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, &netid, 10000, 6);
+        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, &netid, 10000);
         msg.add_str(UdpMessage::ROUTENAME, name);
         msg.add_bytes(UdpMessage::NETID, &netid.0);
         msg.add_str(UdpMessage::USERNAME, "Administrator");
         msg.add_str(UdpMessage::PASSWORD, "");
         msg.add_str(UdpMessage::HOST, &format!("{}", self.if_addr));
-        msg.add_u32(UdpMessage::OPTIONS, 1); // temporary route
+        if self.typ == BhType::CX3 {
+            // mark as temporary route (seems to crash CXs with TC2)
+            msg.add_u32(UdpMessage::OPTIONS, 1);
+        }
 
         let sock = UdpSocket::bind(("0.0.0.0", 0))?;
         sock.set_read_timeout(Some(Duration::from_millis(500)))?;
@@ -146,7 +156,7 @@ impl Distributor {
         let (bh_tx, bh_rx) = channel::unbounded();
 
         // start keep-alive thread
-        if self.bh.is_bc {
+        if self.bh.typ == BhType::BC {
             info!("starting BC keepalive thread");
             self.run_keepalive(&bh_sock)?;
         }
@@ -414,6 +424,8 @@ impl Forwarder {
             // closed immediately
             if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
                 Err(format!("TCP: while adding backroute: {}", e))?;
+            } else {
+                info!("TCP: added backroute to forwarder");
             }
             // start TCP forwarding
             let (conn_tx, conn_rx) = channel::unbounded();

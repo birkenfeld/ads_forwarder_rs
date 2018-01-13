@@ -199,24 +199,31 @@ impl UdpMessage {
     pub const ROUTENAME: u16 = 12;
     pub const USERNAME: u16 = 13;
 
-    pub fn new(op: u32, from: &AmsNetId, fromport: u16, ndata: u32) -> UdpMessage {
+    pub fn new(op: u32, from: &AmsNetId, fromport: u16) -> UdpMessage {
         let mut v = Vec::new();
         for &n in &[BECKHOFF_UDP_MAGIC, 0, op] {
             v.write_u32::<LE>(n).unwrap();
         }
         v.write_all(&from.0).unwrap();
         v.write_u16::<LE>(fromport).unwrap();
-        v.write_u32::<LE>(ndata).unwrap();
+        v.write_u32::<LE>(0).unwrap();
         UdpMessage(v)
     }
 
+    fn inc_data_count(&mut self) {
+        let n = LE::read_u32(&self.0[20..24]);
+        LE::write_u32(&mut self.0[20..24], n + 1);
+    }
+
     pub fn add_bytes(&mut self, desig: u16, data: &[u8]) {
+        self.inc_data_count();
         self.0.write_u16::<LE>(desig).unwrap();
         self.0.write_u16::<LE>(data.len() as u16).unwrap();
         self.0.write_all(data).unwrap();
     }
 
     pub fn add_str(&mut self, desig: u16, data: &str) {
+        self.inc_data_count();
         self.0.write_u16::<LE>(desig).unwrap();
         self.0.write_u16::<LE>(data.len() as u16 + 1).unwrap();
         self.0.write_all(data.as_bytes()).unwrap();
@@ -224,6 +231,7 @@ impl UdpMessage {
     }
 
     pub fn add_u32(&mut self, desig: u16, data: u32) {
+        self.inc_data_count();
         self.0.write_u16::<LE>(desig).unwrap();
         self.0.write_u16::<LE>(4).unwrap();
         self.0.write_u32::<LE>(data).unwrap();
