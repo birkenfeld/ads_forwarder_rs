@@ -48,7 +48,7 @@ mod util;
 
 use scanner::{Scan, Scanner};
 
-/// Used to define and parse command line options.
+/// A forwarder for Beckhoff ADS and UDP connections.
 #[derive(StructOpt)]
 pub struct Options {
     #[structopt(short="F", long="forward", help="Forward connections (only scan otherwise)")]
@@ -63,28 +63,30 @@ pub struct Options {
     _ignore3: bool,
     #[structopt(short="v", long="verbose", help="Increase verbosity")]
     verbosity: u64,
-    #[structopt(help="Interface, IP or AMS NetID to forward to")]
-    arg: String,
+    #[structopt(help="Interface, IP or AMS NetID to scan (default all interfaces)")]
+    arg: Option<String>,
 }
 
 fn main() {
-    let opts = Options::from_args();
+    let mut opts = Options::from_args();
     mlzlog::init(None::<&str>, "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
+
+    let what = opts.arg.take().unwrap_or("".into());
+    let scanner = Scanner::new(opts.verbosity >= 2);
 
     // check out what argument was given (interface, IP address, NetID),
     // and scan for Beckhoffs an their NetIDs
-    let scanner = Scanner::new(opts.verbosity >= 2);
-    let mut beckhoffs = if scanner.if_exists(&opts.arg) {
-        debug!("scanning interface {}", opts.arg);
-        scanner.scan(Scan::Interface(&opts.arg))
-    } else if let Ok(addr) = opts.arg.parse::<net::Ipv4Addr>() {
+    let mut beckhoffs = if scanner.if_exists(&what) {
+        debug!("scanning interface {}", what);
+        scanner.scan(Scan::Interface(&what))
+    } else if let Ok(addr) = what.parse::<net::Ipv4Addr>() {
         debug!("scanning IP address {}", addr);
         scanner.scan(Scan::Address(addr))
-    } else if let Ok(netid) = opts.arg.parse::<util::AmsNetId>() {
+    } else if let Ok(netid) = what.parse::<util::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
         // scan all possible Beckhoffs and filter out the matching one
         scanner.scan(Scan::Everything).into_iter().filter(|b| b.netid == netid).collect()
-    } else if opts.arg.is_empty() {
+    } else if what.is_empty() {
         debug!("scanning everything");
         scanner.scan(Scan::Everything)
     } else {
@@ -101,5 +103,10 @@ fn main() {
         if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
             error!("while running forwarder: {}", e);
         }
+    } else {
+        if beckhoffs.is_empty() {
+            info!("scan: no Beckhoff found");
+        }
+        info!("exiting; pass -F to forward connections")
     }
 }
