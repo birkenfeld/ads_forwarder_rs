@@ -31,21 +31,25 @@ use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_N
 
 
 /// Determines what to scan.
-pub enum Scan {
+pub enum Scan<'a> {
     Everything,
-    Interface(Ipv4Addr),
+    Interface(&'a str),
     Address(Ipv4Addr),
 }
 
 
 pub struct Scanner {
-    pub dump: bool,
-    pub if_addrs: HashMap<String, (Ipv4Addr, Ipv4Addr)>,
+    dump: bool,
+    if_addrs: HashMap<String, (Ipv4Addr, Ipv4Addr)>,
 }
 
 impl Scanner {
     pub fn new(dump: bool) -> Scanner {
         Scanner { dump, if_addrs: find_ipv4_addrs() }
+    }
+
+    pub fn if_exists(&self, if_name: &str) -> bool {
+        self.if_addrs.contains_key(if_name)
     }
 
     /// Scan the locally reachable network for Beckhoffs.
@@ -71,9 +75,14 @@ impl Scanner {
         let cx_scan_result_struct = structure!("<I4xI6S6xH2x10s280xH2xBBH");
 
         let (bind_addr, send_addr) = match what {
-            Scan::Everything => ([0, 0, 0, 0].into(), [255, 255, 255, 255].into()),
-            Scan::Interface(addr) => (addr, [255, 255, 255, 255].into()),
-            Scan::Address(addr) => ([0, 0, 0, 0].into(), addr),
+            Scan::Everything =>
+                ([0, 0, 0, 0].into(), [255, 255, 255, 255].into()),
+            // unfortunately, we have to broadcast to 255.255.255.255 here
+            // since BCs do not respond to broadcasts on a subnet 
+            Scan::Interface(if_name) =>
+                (self.if_addrs[if_name].0, [255, 255, 255, 255].into()),
+            Scan::Address(bh_addr) =>
+                ([0, 0, 0, 0].into(), bh_addr),
         };
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
@@ -128,6 +137,7 @@ impl Scanner {
         Ok(beckhoffs)
     }
 
+    /// Find the local address of the interface whose network contains given addr.
     fn find_if_addr(&self, bh_addr: Ipv4Addr) -> Ipv4Addr {
         for &(if_addr, if_mask) in self.if_addrs.values() {
             if in_same_net(bh_addr, if_addr, if_mask) {

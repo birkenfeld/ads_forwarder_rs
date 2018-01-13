@@ -66,9 +66,9 @@ fn main() {
     // check out what argument was given (interface, IP address, NetID),
     // and scan for Beckhoffs an their NetIDs
     let scanner = Scanner::new(opts.verbosity >= 2);
-    let mut beckhoffs = if let Some(&(ifaddr, _)) = scanner.if_addrs.get(&opts.arg) {
+    let mut beckhoffs = if scanner.if_exists(&opts.arg) {
         debug!("scanning interface {}", opts.arg);
-        scanner.scan(Scan::Interface(ifaddr))
+        scanner.scan(Scan::Interface(&opts.arg))
     } else if let Ok(addr) = opts.arg.parse::<net::Ipv4Addr>() {
         debug!("scanning IP address {}", addr);
         scanner.scan(Scan::Address(addr))
