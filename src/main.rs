@@ -53,6 +53,8 @@ use scanner::{Scan, Scanner};
 pub struct Options {
     #[structopt(short="F", long="forward", help="Forward connections (only scan otherwise)")]
     forward: bool,
+    #[structopt(short="U", long="udp-only", help="Forward only UDP")]
+    udponly: bool,
     #[structopt(short="S", long="scan-bc", help="Ignored for compatibility")]
     _ignore1: bool,
     #[structopt(short="A", long="scan-netid", help="Ignored for compatibility")]

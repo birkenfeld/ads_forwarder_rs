@@ -401,18 +401,25 @@ impl Forwarder {
 
     /// Run the whole forwarder.
     pub fn run(&mut self) -> FwdResult<()> {
-        // add route to ourselves - without it, TCP connections are
-        // closed immediately
-        if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
-            Err(format!("TCP: while adding backroute: {}", e))?;
-        }
         // start UDP forwarding
         self.run_udp("UDP-BC", BECKHOFF_BC_UDP_PORT)?;
         self.run_udp("UDP", BECKHOFF_UDP_PORT)?;
-        // start TCP forwarding
-        let (conn_tx, conn_rx) = channel::unbounded();
-        self.run_tcp_distributor(conn_rx);
-        self.run_tcp_listener(conn_tx)?;
+        if self.opts.udponly {
+            loop {
+                // threads are doing all the work
+                thread::sleep(Duration::from_secs(1));
+            }
+        } else {
+            // add route to ourselves - without it, TCP connections are
+            // closed immediately
+            if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
+                Err(format!("TCP: while adding backroute: {}", e))?;
+            }
+            // start TCP forwarding
+            let (conn_tx, conn_rx) = channel::unbounded();
+            self.run_tcp_distributor(conn_rx);
+            self.run_tcp_listener(conn_tx)?;
+        }
         Ok(())
     }
 }
