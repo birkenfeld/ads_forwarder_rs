@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use forwarder::Beckhoff;
 use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_NETID,
-           BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_MAGIC, BECKHOFF_UDP_PORT};
+           BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT, UdpMessage};
 
 
 /// Determines what to scan.
@@ -89,8 +89,6 @@ impl Scanner {
                  -> Result<Vec<Beckhoff>, Box<Error>> {
         let bc_scan_struct = structure!("<IHHHHHH");
         let bc_scan_result_struct = structure!("<I6x6S6x20s");
-        let cx_scan_struct = structure!("<I4xI6SH4x");
-        let cx_scan_result_struct = structure!("<I4xI6S6xH2x10s280xH2xBBH");
 
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
@@ -105,11 +103,11 @@ impl Scanner {
         }
 
         // scan for CXs: "identify" operation in the UDP protocol
-        let cx_msg = cx_scan_struct.pack(BECKHOFF_UDP_MAGIC, 1, &FWDER_NETID.0, 10000).unwrap();
-        udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
+        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000, 0);
+        udp.send_to(&cx_msg.0, (send_addr, BECKHOFF_UDP_PORT))?;
         if self.dump {
             debug!("scan: {} bytes for CX scan", bc_msg.len());
-            hexdump(&cx_msg);
+            hexdump(&cx_msg.0);
         }
 
         // wait for replies
@@ -130,16 +128,15 @@ impl Scanner {
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               is_bc: true, bh_addr, netid });
                 }
-            } else if let Ok(info) = cx_scan_result_struct.unpack(reply) {
-                let (magic, header, netid, name_id, name, ver_id, ver_maj, ver_min, ver_patch) = info;
-                if magic == BECKHOFF_UDP_MAGIC && header == 0x8000_0001 && name_id == 5 && ver_id == 3 {
-                    let netid = AmsNetId::from_slice(&netid);
-                    info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
-                          String::from_utf8_lossy(&name), ver_maj, ver_min, ver_patch,
-                          netid, bh_addr);
-                    beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
-                                              is_bc: false, bh_addr, netid });
-                }
+            } else if let Ok((netid, info)) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
+                let name = info[&UdpMessage::HOST];
+                let name = String::from_utf8_lossy(&name[..name.len() - 1]);
+                let ver = info[&UdpMessage::VERSION];
+                info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
+                      name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
+                      netid, bh_addr);
+                beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
+                                          is_bc: false, bh_addr, netid });
             }
             // if scanning a single address, don't wait for more replies
             if single_reply {

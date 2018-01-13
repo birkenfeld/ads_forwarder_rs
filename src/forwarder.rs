@@ -30,7 +30,7 @@ use channel::{self, Select, Receiver, Sender};
 use mlzlog;
 
 use Options;
-use util::{AdsMessage, AmsNetId, hexdump, BECKHOFF_UDP_MAGIC, BECKHOFF_UDP_PORT,
+use util::{AdsMessage, AmsNetId, hexdump, UdpMessage, BECKHOFF_UDP_PORT,
            BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID, DUMMY_NETID};
 
 type FwdResult<T> = Result<T, Box<Error>>;
@@ -52,35 +52,29 @@ pub struct Beckhoff {
 
 impl Beckhoff {
     /// Add a route on the Beckhoff, to `netid` via our interface address.
-    fn add_route<R: AsRef<[u8]>>(&self, netid: &AmsNetId, name: R) -> FwdResult<()> {
+    fn add_route(&self, netid: &AmsNetId, name: &str) -> FwdResult<()> {
         if self.is_bc {
             // no routes necessary on BCs
             return Ok(());
         }
-        let cx_route_struct = structure!("<I4xI6SHIHH10sHH6SHH14sHHsHH16sHHI");
-        let cx_route_result_struct = structure!("<I4xI12xH2xI");
-        let msg = cx_route_struct.pack(
-            BECKHOFF_UDP_MAGIC, 6, &netid.0, 10000, 6,
-            0x0c, 0x0a, name.as_ref(),
-            0x07, 0x06, &netid.0,
-            0x0d, 0x0e, b"Administrator",
-            0x02, 0x01, b"",
-            0x05, 0x10, format!("{}", self.if_addr).as_bytes(),
-            0x09, 0x04, 1
-        ).unwrap();
+
+        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, &netid, 10000, 6);
+        msg.add_str(UdpMessage::ROUTENAME, name);
+        msg.add_bytes(UdpMessage::NETID, &netid.0);
+        msg.add_str(UdpMessage::USERNAME, "Administrator");
+        msg.add_str(UdpMessage::PASSWORD, "");
+        msg.add_str(UdpMessage::HOST, &format!("{}", self.if_addr));
+        msg.add_u32(UdpMessage::OPTIONS, 1); // temporary route
 
         let sock = UdpSocket::bind(("0.0.0.0", 0))?;
         sock.set_read_timeout(Some(Duration::from_millis(500)))?;
-        sock.send_to(&msg, (self.bh_addr, BECKHOFF_UDP_PORT))?;
+        sock.send_to(&msg.0, (self.bh_addr, BECKHOFF_UDP_PORT))?;
 
         let mut reply = [0; 2048];
         let (len, _) = sock.recv_from(&mut reply)?;
-        let (magic, header, res_id, res) = cx_route_result_struct.unpack(&reply[..len])?;
-        if magic != BECKHOFF_UDP_MAGIC {
-            return Err("invalid magic in reply".into());
-        }
-        if header != 0x8000_0006 || res_id != 0x1 || res != 0 {
-            return Err("invalid result in reply".into());
+        let (_, items) = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
+        if items[&UdpMessage::STATUS] != &[0, 0, 0, 0] {
+            Err("status of ADD_ROUTE not ok")?;
         }
         Ok(())
     }
