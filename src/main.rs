@@ -84,8 +84,7 @@ fn main() {
         scanner.scan(Scan::Address(addr))
     } else if let Ok(netid) = what.parse::<util::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
-        // scan all possible Beckhoffs and filter out the matching one
-        scanner.scan(Scan::Everything).into_iter().filter(|b| b.netid == netid).collect()
+        scanner.scan(Scan::NetId(netid))
     } else if what.is_empty() {
         debug!("scanning everything");
         scanner.scan(Scan::Everything)

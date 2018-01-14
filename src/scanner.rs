@@ -35,6 +35,7 @@ pub enum Scan<'a> {
     Everything,
     Interface(&'a str),
     Address(Ipv4Addr),
+    NetId(AmsNetId),
 }
 
 
@@ -82,6 +83,17 @@ impl Scanner {
                     all.extend(self.scan_addr(if_addr, broadcast, false)?);
                 }
                 Ok(all)
+            }
+            Scan::NetId(netid) => {
+                // scan all interfaces until we found our NetID
+                for (if_name, &(if_addr, _)) in self.if_addrs.iter() {
+                    debug!("scanning interface {}", if_name);
+                    let bhs = self.scan_addr(if_addr, broadcast, false)?;
+                    if let Some(bh) = bhs.into_iter().find(|bh| bh.netid == netid) {
+                        return Ok(vec![bh]);
+                    }
+                }
+                Ok(vec![])
             }
         }
     }
