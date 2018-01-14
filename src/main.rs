@@ -71,7 +71,7 @@ fn main() {
     let mut opts = Options::from_args();
     mlzlog::init(None::<&str>, "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
 
-    let what = opts.arg.take().unwrap_or("".into());
+    let what = opts.arg.take().unwrap_or_default();
     let scanner = Scanner::new(opts.verbosity >= 2);
 
     // check out what argument was given (interface, IP address, NetID),

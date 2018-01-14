@@ -30,16 +30,10 @@ use channel::{self, Select, Receiver, Sender};
 use mlzlog;
 
 use Options;
-use util::{AdsMessage, AmsNetId, hexdump, UdpMessage, BECKHOFF_UDP_PORT,
+use util::{hexdump, spawn, AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
            BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID, DUMMY_NETID};
 
 type FwdResult<T> = Result<T, Box<Error>>;
-
-
-/// Spawn a thread with a given name.
-fn spawn<F: Send + 'static + FnOnce()>(name: &str, f: F) {
-    let _ = thread::Builder::new().name(name.into()).spawn(f);
-}
 
 
 #[derive(Clone, PartialEq)]
@@ -65,7 +59,7 @@ impl Beckhoff {
             return Ok(());
         }
 
-        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, &netid, 10000);
+        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, netid, 10000);
         msg.add_str(UdpMessage::ROUTENAME, name);
         msg.add_bytes(UdpMessage::NETID, &netid.0);
         msg.add_str(UdpMessage::USERNAME, "Administrator");
@@ -78,12 +72,12 @@ impl Beckhoff {
 
         let sock = UdpSocket::bind(("0.0.0.0", 0))?;
         sock.set_read_timeout(Some(Duration::from_millis(500)))?;
-        sock.send_to(&msg.0, (self.bh_addr, BECKHOFF_UDP_PORT))?;
+        sock.send_to(&msg.into_bytes(), (self.bh_addr, BECKHOFF_UDP_PORT))?;
 
         let mut reply = [0; 2048];
         let (len, _) = sock.recv_from(&mut reply)?;
-        let (_, items) = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
-        if items.get(&UdpMessage::STATUS) != Some(&&[0, 0, 0, 0][..]) {
+        let msg = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
+        if msg.get_u32(UdpMessage::STATUS) != Some(0) {
             Err("status of ADD_ROUTE not ok")?;
         }
         Ok(())

@@ -77,7 +77,8 @@ impl Scanner {
                 self.scan_addr(self.if_addrs[if_name].0, broadcast, false),
             Scan::Everything => {
                 let mut all = Vec::new();
-                for &(if_addr, _) in self.if_addrs.values() {
+                for (if_name, &(if_addr, _)) in self.if_addrs.iter() {
+                    debug!("scanning interface {}", if_name);
                     all.extend(self.scan_addr(if_addr, broadcast, false)?);
                 }
                 Ok(all)
@@ -102,11 +103,11 @@ impl Scanner {
         }
 
         // scan for CXs: "identify" operation in the UDP protocol
-        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000);
-        udp.send_to(&cx_msg.0, (send_addr, BECKHOFF_UDP_PORT))?;
+        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000).into_bytes();
+        udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
         debug!("scan: sending CX UDP packet");
         if self.dump {
-            hexdump(&cx_msg.0);
+            hexdump(&cx_msg);
         }
 
         // wait for replies
@@ -129,16 +130,15 @@ impl Scanner {
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               typ: BhType::BC, bh_addr, netid });
                 }
-            } else if let Ok((netid, info)) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
-                let name = info.get(&UdpMessage::HOST).ok_or("no host info")?;
-                let name = String::from_utf8_lossy(&name[..name.len() - 1]);
-                let ver = info.get(&UdpMessage::VERSION).ok_or("no version info")?;
+            } else if let Ok(msg) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
+                let name = msg.get_str(UdpMessage::HOST).unwrap_or("<???>");
+                let ver = msg.get_bytes(UdpMessage::VERSION).ok_or("no version info")?;
                 info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
-                      netid, bh_addr);
+                      msg.srcid, bh_addr);
                 beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                           typ: if ver[0] == 2 { BhType::CX2 } else { BhType::CX3 },
-                                          bh_addr, netid });
+                                          bh_addr, netid: msg.srcid });
             }
             // if scanning a single address, don't wait for more replies
             if single_reply {
