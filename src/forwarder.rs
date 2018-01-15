@@ -224,13 +224,13 @@ impl Distributor {
                 // check for replies from Beckhoff
                 if let Ok(x) = sel.recv(&bh_chan) {
                     if let ReadEvent::Msg(mut reply) = x {
-                        if reply.dest_id() != DUMMY_NETID {
-                            for client in &mut clients {
-                                if client.virtual_id == reply.dest_id() {
-                                    self.new_beckhoff_msg(reply, client);
-                                    break 'select;
-                                }
+                        for client in &mut clients {
+                            if client.virtual_id == reply.dest_id() {
+                                self.new_beckhoff_msg(reply, client);
+                                break 'select;
                             }
+                        }
+                        if reply.dest_id() != DUMMY_NETID {
                             // unhandled message, something went wrong...
                             warn!("message from Beckhoff to {} not forwarded", reply.dest_id());
                         }
