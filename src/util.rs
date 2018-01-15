@@ -189,15 +189,15 @@ impl AdsMessage {
 
 
 /// Represents a message in the UDP protocol used by CX Beckhoffs.
-pub struct UdpMessage {
+pub struct UdpMessage<T: AsRef<[u8]>> {
     pub srcid: AmsNetId,
     pub srcport: u16,
     pub op: u32,
     items: Vec<(u16, usize, usize)>,
-    data: Vec<u8>,
+    data: T,
 }
 
-impl UdpMessage {
+impl UdpMessage<Vec<u8>> {
     // operations
     pub const IDENTIFY: u32 = 1;
     pub const ADD_ROUTE: u32 = 6;
@@ -212,7 +212,7 @@ impl UdpMessage {
     pub const ROUTENAME: u16 = 12;
     pub const USERNAME: u16 = 13;
 
-    pub fn new(op: u32, srcid: &AmsNetId, srcport: u16) -> UdpMessage {
+    pub fn new(op: u32, srcid: &AmsNetId, srcport: u16) -> UdpMessage<Vec<u8>> {
         UdpMessage { op, srcid: srcid.clone(), srcport,
                      items: Vec::with_capacity(8), data: Vec::with_capacity(128) }
     }
@@ -242,11 +242,42 @@ impl UdpMessage {
         self.items.push((desig, start, self.data.len()));
     }
 
-    fn map_desig<'a, T, F>(&'a self, desig: u16, map: F) -> Option<T>
-        where F: Fn(&'a [u8]) -> Option<T>
+    pub fn parse(mut data: &[u8], op: u32) -> Result<UdpMessage<&[u8]>, Box<Error>> {
+        if data.read_u32::<LE>()? != BECKHOFF_UDP_MAGIC {
+            Err("magic not recognized")?;
+        }
+        if data.read_u32::<LE>()? != 0 {
+            Err("zero bytes missing")?;
+        }
+        if data.read_u32::<LE>()? != op | 0x8000_0000 {
+            Err("operation acknowledge missing")?;
+        }
+        let srcid = AmsNetId::from_slice(&data[..6]);
+        data = &data[6..];
+        let srcport = data.read_u16::<LE>()?;
+        let nitems = data.read_u32::<LE>()?;
+
+        let mut items = Vec::with_capacity(nitems as usize);
+        {
+            let mut data_ptr = &data[..];
+            let mut pos = 4;
+            while let Ok(desig) = data_ptr.read_u16::<LE>() {
+                let len = data_ptr.read_u16::<LE>()? as usize;
+                items.push((desig, pos, pos + len));
+                pos += len + 4;
+                data_ptr = &data_ptr[len..];
+            }
+        }
+        Ok(UdpMessage { op, srcid, srcport, data, items })
+    }
+}
+
+impl<T: AsRef<[u8]>> UdpMessage<T> {
+    fn map_desig<'a, O, F>(&'a self, desig: u16, map: F) -> Option<O>
+        where F: Fn(&'a [u8]) -> Option<O>
     {
         self.items.iter().find(|item| item.0 == desig)
-                         .and_then(|&(_, i, j)| map(&self.data[i..j]))
+                         .and_then(|&(_, i, j)| map(&self.data.as_ref()[i..j]))
     }
 
     pub fn get_bytes(&self, desig: u16) -> Option<&[u8]> {
@@ -261,45 +292,15 @@ impl UdpMessage {
         self.map_desig(desig, |mut b| b.read_u32::<LE>().ok())
     }
 
-    pub fn into_bytes(mut self) -> Vec<u8> {
-        let mut v = Vec::with_capacity(self.data.len() + 24);
+    pub fn into_bytes(self) -> Vec<u8> {
+        let mut v = Vec::with_capacity(self.data.as_ref().len() + 24);
         for &n in &[BECKHOFF_UDP_MAGIC, 0, self.op] {
             v.write_u32::<LE>(n).unwrap();
         }
         v.write_all(&self.srcid.0).unwrap();
         v.write_u16::<LE>(self.srcport).unwrap();
         v.write_u32::<LE>(self.items.len() as u32).unwrap();
-        v.append(&mut self.data);
+        v.extend_from_slice(self.data.as_ref());
         v
-    }
-
-    pub fn parse(mut reply: &[u8], op: u32) -> Result<UdpMessage, Box<Error>> {
-        if reply.read_u32::<LE>()? != BECKHOFF_UDP_MAGIC {
-            Err("magic not recognized")?;
-        }
-        if reply.read_u32::<LE>()? != 0 {
-            Err("zero bytes missing")?;
-        }
-        if reply.read_u32::<LE>()? != op | 0x8000_0000 {
-            Err("operation acknowledge missing")?;
-        }
-        let srcid = AmsNetId::from_slice(&reply[..6]);
-        reply = &reply[6..];
-        let srcport = reply.read_u16::<LE>()?;
-        let nitems = reply.read_u32::<LE>()?;
-
-        let data = reply.to_vec();
-        let mut items = Vec::with_capacity(nitems as usize);
-        {
-            let mut data_ptr = &data[..];
-            let mut pos = 4;
-            while let Ok(desig) = data_ptr.read_u16::<LE>() {
-                let len = data_ptr.read_u16::<LE>()? as usize;
-                items.push((desig, pos, pos + len));
-                pos += len + 4;
-                data_ptr = &data_ptr[len..];
-            }
-        }
-        Ok(UdpMessage { op, srcid, srcport, data, items })
     }
 }
