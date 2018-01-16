@@ -22,12 +22,12 @@
 
 use std::error::Error;
 use std::collections::HashMap;
-use std::net::{UdpSocket, Ipv4Addr};
+use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
 
 use forwarder::{Beckhoff, BhType};
 use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_NETID,
-           BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT, UdpMessage};
+           BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT, BECKHOFF_TCP_PORT, UdpMessage};
 
 
 /// Determines what to scan.
@@ -160,13 +160,19 @@ impl Scanner {
         Ok(beckhoffs)
     }
 
-    /// Find the local address of the interface whose network contains given addr.
+    /// Find the local address of the interface to connect to the given Beckhoff.
     fn find_if_addr(&self, bh_addr: Ipv4Addr) -> Ipv4Addr {
+        // check for local IPs
         for &(if_addr, if_mask) in self.if_addrs.values() {
             if in_same_net(bh_addr, if_addr, if_mask) {
                 return if_addr;
             }
         }
-        panic!("Did not find local interface address for Beckhoff {}?!", bh_addr);
+
+        // not a local IP, check by trying to connect using TCP
+        match TcpStream::connect((bh_addr, BECKHOFF_TCP_PORT)).and_then(|sock| sock.local_addr()) {
+            Ok(addr) => unwrap_ipv4(addr.ip()),
+            _ => panic!("Did not find local address for route to Beckhoff {}", bh_addr)
+        }
     }
 }
