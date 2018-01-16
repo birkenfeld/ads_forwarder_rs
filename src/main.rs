@@ -22,7 +22,7 @@
 
 // Use the system allocator instead of jemalloc.
 // This allows us to build with the i586 target on Debian 7.
-#![feature(alloc_system, global_allocator, allocator_api)]
+#![feature(alloc_system, global_allocator, allocator_api, lookup_host)]
 extern crate alloc_system;
 use alloc_system::System;
 #[global_allocator]
@@ -63,7 +63,7 @@ pub struct Options {
     _ignore3: bool,
     #[structopt(short="v", long="verbose", help="Increase verbosity")]
     verbosity: u64,
-    #[structopt(help="Interface, IP or AMS NetID to scan (default all interfaces)")]
+    #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     arg: Option<String>,
 }
 
@@ -85,6 +85,9 @@ fn main() {
     } else if let Ok(netid) = what.parse::<util::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
         scanner.scan(Scan::NetId(netid))
+    } else if let Some(addr) = util::lookup_ipv4(&what) {
+        debug!("scanning host {}", what);
+        scanner.scan(Scan::Address(addr))
     } else if what.is_empty() {
         debug!("scanning everything");
         scanner.scan(Scan::Everything)

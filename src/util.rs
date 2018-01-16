@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{SocketAddr, IpAddr, Ipv4Addr, lookup_host};
 use std::str::{self, FromStr};
 use std::thread;
 use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
@@ -91,6 +91,16 @@ pub fn find_ipv4_addrs() -> HashMap<String, (Ipv4Addr, Ipv4Addr)> {
     interfaces::Interface::get_all().unwrap().into_iter().filter_map(|iface| {
         ipv4_addr(&iface.addresses).map(|addr| (iface.name.clone(), addr))
     }).collect()
+}
+
+/// Determine IPv4 address of a host name.
+pub fn lookup_ipv4(host: &str) -> Option<Ipv4Addr> {
+    for addr in lookup_host(host).ok()? {
+        if let SocketAddr::V4(v4addr) = addr {
+            return Some(*v4addr.ip());
+        }
+    }
+    None
 }
 
 
