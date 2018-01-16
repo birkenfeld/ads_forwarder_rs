@@ -232,24 +232,24 @@ impl Distributor {
         let mut clients = Vec::<ClientConn>::new();
         let mut cleanup = None;
         loop {
+            // cleanup clients
+            if let Some(peer) = cleanup.take() {
+                clients.retain(|client| client.peer != peer);
+            }
+            // check for interrupt signal
+            if self.sig.caught() {
+                info!("exiting, removing routes...");
+                if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
+                    warn!("could not remove forwarder route: {}", e);
+                }
+                if let Err(e) = self.bh.remove_routes(&mut bh_sock, "fwdclient") {
+                    warn!("could not remove forwarder client routes: {}", e);
+                }
+                return;
+            }
             // select loop - always break after Ok replies!
             let mut sel = Select::with_timeout(Duration::from_millis(500));
             'select: loop {
-                // cleanup clients
-                if let Some(peer) = cleanup.take() {
-                    clients.retain(|client| client.peer != peer);
-                }
-                // check for interrupt signal
-                if self.sig.caught() {
-                    info!("exiting, removing routes...");
-                    if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
-                        warn!("could not remove forwarder route: {}", e);
-                    }
-                    if let Err(e) = self.bh.remove_routes(&mut bh_sock, "fwdclient") {
-                        warn!("could not remove forwarder client routes: {}", e);
-                    }
-                    return;
-                }
                 // check for new connections
                 if let Ok(sock) = sel.recv(&conn_rx) {
                     match self.new_tcp_conn(sock) {
@@ -295,6 +295,10 @@ impl Distributor {
                         }
                         break 'select;
                     }
+                }
+                // check for timeout
+                if sel.timed_out() {
+                    break 'select;
                 }
             }
         }
