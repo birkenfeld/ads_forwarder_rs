@@ -35,6 +35,7 @@ extern crate byteorder;
 extern crate structopt;
 extern crate interfaces;
 extern crate itertools;
+extern crate signalbool;
 extern crate crossbeam_channel as channel;
 #[macro_use]
 extern crate structopt_derive;

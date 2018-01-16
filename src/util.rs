@@ -160,6 +160,7 @@ impl AdsMessage {
     }
 
     pub const DEVINFO: u16 = 1;
+    pub const WRITE: u16 = 3;
 
     pub fn new(dstid: &AmsNetId, dstport: u16, srcid: &AmsNetId, srcport: u16,
                cmd: u16, data: &[u8]) -> AdsMessage {
@@ -173,6 +174,7 @@ impl AdsMessage {
         v.write_u16::<LE>(4).unwrap();
         v.write_u32::<LE>(data.len() as u32).unwrap();
         v.write_u64::<LE>(0).unwrap(); // Error-code + Invoke-ID
+        v.write_all(data).unwrap();
         AdsMessage(v)
     }
 

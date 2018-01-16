@@ -25,8 +25,9 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
-use byteorder::{ByteOrder, LittleEndian as LE};
+use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
 use channel::{self, Select, Receiver, Sender};
+use signalbool::{Flag, Signal, SignalBool};
 use mlzlog;
 
 use Options;
@@ -87,6 +88,25 @@ impl Beckhoff {
         }
         Err("standard Administrator passwords not accepted".into())
     }
+
+    /// Remove all routes on the Beckhoff with given name.
+    fn remove_routes(&self, sock: &mut TcpStream, name: &str) -> FwdResult<()> {
+        if self.typ == BhType::BC {
+            return Ok(());
+        }
+
+        let mut data = Vec::new();
+        data.write_u32::<LE>(0x322).unwrap(); // Index-group for removing routes
+        data.write_u32::<LE>(0).unwrap();     // Index-offset
+        data.write_u32::<LE>(name.len() as u32 + 1).unwrap(); // Data-len
+        data.write_all(name.as_bytes()).unwrap();
+        data.write_all(&[0]).unwrap();
+        let msg = AdsMessage::new(&self.netid, 10000, &FWDER_NETID, 40001,
+                                  AdsMessage::WRITE, &data);
+        sock.write_all(&msg.0)?;
+
+        Ok(())
+    }
 }
 
 
@@ -104,6 +124,7 @@ struct Distributor {
     bh: Beckhoff,
     next_virtual_id: u16,
     dump: bool,
+    sig: SignalBool,
 }
 
 /// Represents a single client connection.
@@ -193,7 +214,7 @@ impl Distributor {
     /// is closed, it is tried to reopen every second.
     fn run(&mut self, conn_rx: Receiver<TcpStream>) {
         mlzlog::set_thread_prefix("TCP: ".into());
-        loop {
+        while !self.sig.caught() {
             match self.connect() {
                 Ok((bh_sock, bh_chan)) => self.handle(&conn_rx, bh_sock, bh_chan),
                 Err(e) => {
@@ -212,11 +233,21 @@ impl Distributor {
         let mut cleanup = None;
         loop {
             // select loop - always break after Ok replies!
-            let mut sel = Select::new();
+            let mut sel = Select::with_timeout(Duration::from_millis(500));
             'select: loop {
                 // execute cleanup
                 if let Some(peer) = cleanup.take() {
                     clients.retain(|client| client.peer != peer);
+                }
+                if self.sig.caught() {
+                    info!("exiting, removing routes...");
+                    if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
+                        warn!("could not remove forwarder route: {}", e);
+                    }
+                    if let Err(e) = self.bh.remove_routes(&mut bh_sock, "fwdclient") {
+                        warn!("could not remove forwarder client routes: {}", e);
+                    }
+                    return;
                 }
                 // check for new connections
                 if let Ok(sock) = sel.recv(&conn_rx) {
@@ -390,8 +421,11 @@ impl Forwarder {
             bh: self.bh.clone(),
             next_virtual_id: 0,
             dump: self.opts.verbosity >= 2,
+            sig: SignalBool::new(&[Signal::SIGINT],
+                                 Flag::Restart).unwrap(),
         };
-        spawn("distributor", move || distributor.run(conn_rx));
+
+        distributor.run(conn_rx);
     }
 
     /// Run the TCP listener, sending new client connections to the given channel.
@@ -400,11 +434,14 @@ impl Forwarder {
         let srv_sock = TcpListener::bind(("0.0.0.0", BECKHOFF_TCP_PORT))?;
         info!("TCP: bound to {}", srv_sock.local_addr()?);
 
-        // main loop: send new client sockets to distributor
-        for conn in srv_sock.incoming() {
-            let _ = conn_tx.send(conn?);
-        }
-
+        spawn("listener", move || {
+            // main loop: send new client sockets to distributor
+            for conn in srv_sock.incoming() {
+                if let Ok(conn) = conn {
+                    let _ = conn_tx.send(conn);
+                }
+            }
+        });
         Ok(())
     }
 
@@ -428,8 +465,8 @@ impl Forwarder {
             }
             // start TCP forwarding
             let (conn_tx, conn_rx) = channel::unbounded();
-            self.run_tcp_distributor(conn_rx);
             self.run_tcp_listener(conn_tx)?;
+            self.run_tcp_distributor(conn_rx);
         }
         Ok(())
     }
