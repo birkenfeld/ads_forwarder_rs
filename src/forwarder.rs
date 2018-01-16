@@ -59,28 +59,33 @@ impl Beckhoff {
             return Ok(());
         }
 
-        let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, netid, 10000);
-        msg.add_str(UdpMessage::ROUTENAME, name);
-        msg.add_bytes(UdpMessage::NETID, &netid.0);
-        msg.add_str(UdpMessage::USERNAME, "Administrator");
-        msg.add_str(UdpMessage::PASSWORD, "");
-        msg.add_str(UdpMessage::HOST, &format!("{}", self.if_addr));
-        if self.typ == BhType::CX3 {
-            // mark as temporary route (seems to crash CXs with TC2)
-            msg.add_u32(UdpMessage::OPTIONS, 1);
-        }
-
         let sock = UdpSocket::bind(("0.0.0.0", 0))?;
-        sock.set_read_timeout(Some(Duration::from_millis(500)))?;
-        sock.send_to(&msg.into_bytes(), (self.bh_addr, BECKHOFF_UDP_PORT))?;
+        sock.set_read_timeout(Some(Duration::from_millis(1500)))?;
 
-        let mut reply = [0; 2048];
-        let (len, _) = sock.recv_from(&mut reply)?;
-        let msg = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
-        if msg.get_u32(UdpMessage::STATUS) != Some(0) {
-            Err("status of ADD_ROUTE not ok")?;
+        for password in &["", "1"] {
+            let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, netid, 10000);
+            msg.add_str(UdpMessage::ROUTENAME, name);
+            msg.add_bytes(UdpMessage::NETID, &netid.0);
+            msg.add_str(UdpMessage::USERNAME, "Administrator");
+            msg.add_str(UdpMessage::PASSWORD, password);
+            msg.add_str(UdpMessage::HOST, &format!("{}", self.if_addr));
+            if self.typ == BhType::CX3 {
+                // mark as temporary route (seems to crash CXs with TC2)
+                msg.add_u32(UdpMessage::OPTIONS, 1);
+            }
+            sock.send_to(&msg.into_bytes(), (self.bh_addr, BECKHOFF_UDP_PORT))?;
+
+            let mut reply = [0; 2048];
+            let (len, _) = sock.recv_from(&mut reply)?;
+            let msg = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)?;
+            match msg.get_u32(UdpMessage::STATUS) {
+                Some(0) => return Ok(()),
+                Some(0x0704) => continue,
+                Some(e) => Err(format!("error return when adding route: {:#x}", e))?,
+                None => Err(format!("invalid return message adding route"))?,
+            }
         }
-        Ok(())
+        Err("standard Administrator passwords not accepted".into())
     }
 }
 
