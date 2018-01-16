@@ -122,7 +122,7 @@ pub struct Forwarder {
 /// Beckhoff, and distributes replies among the respective clients.
 struct Distributor {
     bh: Beckhoff,
-    next_virtual_id: u16,
+    ids: Vec<u8>,
     dump: bool,
     sig: SignalBool,
 }
@@ -235,10 +235,11 @@ impl Distributor {
             // select loop - always break after Ok replies!
             let mut sel = Select::with_timeout(Duration::from_millis(500));
             'select: loop {
-                // execute cleanup
+                // cleanup clients
                 if let Some(peer) = cleanup.take() {
                     clients.retain(|client| client.peer != peer);
                 }
+                // check for interrupt signal
                 if self.sig.caught() {
                     info!("exiting, removing routes...");
                     if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
@@ -286,6 +287,10 @@ impl Distributor {
                         } else {
                             // client socket closed -- remove it on next iteration
                             info!("connection from {} closed", client.peer);
+                            let cid = client.virtual_id.0[3];
+                            if cid != 0 {
+                                self.ids.push(cid);
+                            }
                             cleanup = Some(client.peer);
                         }
                         break 'select;
@@ -306,9 +311,8 @@ impl Distributor {
         let (cl_tx, cl_rx) = channel::unbounded();
         let sock2 = sock.try_clone()?;
         spawn("client reader", move || read_loop(sock2, cl_tx));
-        self.next_virtual_id += 1;
-        let virtual_id = AmsNetId([10, 1, (self.next_virtual_id >> 8) as u8,
-                                   self.next_virtual_id as u8, 1, 1]);
+        let id = self.ids.pop().ok_or("too many clients")?;
+        let virtual_id = AmsNetId([10, 1, 0, id, 1, 1]);
         info!("assigned virtual NetID {}", virtual_id);
         Ok(ClientConn { sock, peer, virtual_id, chan: cl_rx,
                         client_id: Default::default(),
@@ -419,7 +423,7 @@ impl Forwarder {
     fn run_tcp_distributor(&mut self, conn_rx: Receiver<TcpStream>) {
         let mut distributor = Distributor {
             bh: self.bh.clone(),
-            next_virtual_id: 0,
+            ids: (1..255).rev().collect(),
             dump: self.opts.verbosity >= 2,
             sig: SignalBool::new(&[Signal::SIGINT],
                                  Flag::Restart).unwrap(),
