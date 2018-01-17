@@ -429,7 +429,7 @@ impl Forwarder {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
             dump: self.opts.verbosity >= 2,
-            sig: SignalBool::new(&[Signal::SIGINT],
+            sig: SignalBool::new(&[Signal::SIGINT, Signal::SIGTERM],
                                  Flag::Restart).unwrap(),
         };
 
