@@ -34,7 +34,7 @@ use interfaces;
 pub const BECKHOFF_BC_UDP_PORT: u16 = 48847; // 0xBECF
 pub const BECKHOFF_TCP_PORT:    u16 = 48898; // 0xBF02
 pub const BECKHOFF_UDP_PORT:    u16 = 48899; // 0xBF03
-pub const BECKHOFF_UDP_MAGIC:   u32 = 0x71146603;
+pub const BECKHOFF_UDP_MAGIC:   u32 = 0x_71_14_66_03;
 
 pub const FWDER_NETID: AmsNetId = AmsNetId([10, 1, 0, 0, 1, 1]);
 pub const DUMMY_NETID: AmsNetId = AmsNetId([1, 1, 1, 1, 1, 1]);
@@ -225,7 +225,7 @@ impl UdpMessage<Vec<u8>> {
     pub const USERNAME: u16 = 13;
 
     pub fn new(op: u32, srcid: &AmsNetId, srcport: u16) -> UdpMessage<Vec<u8>> {
-        UdpMessage { op, srcid: srcid.clone(), srcport,
+        UdpMessage { op, srcid: *srcid, srcport,
                      items: Vec::with_capacity(8), data: Vec::with_capacity(128) }
     }
 
@@ -293,7 +293,7 @@ impl<T: AsRef<[u8]>> UdpMessage<T> {
     }
 
     pub fn get_bytes(&self, desig: u16) -> Option<&[u8]> {
-        self.map_desig(desig, |b| Some(b))
+        self.map_desig(desig, Some)
     }
 
     pub fn get_str(&self, desig: u16) -> Option<&str> {

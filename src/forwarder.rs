@@ -83,7 +83,7 @@ impl Beckhoff {
                 Some(0) => return Ok(()),
                 Some(0x0704) => continue,
                 Some(e) => Err(format!("error return when adding route: {:#x}", e))?,
-                None => Err(format!("invalid return message adding route"))?,
+                None => Err("invalid return message adding route")?,
             }
         }
         Err("standard Administrator passwords not accepted".into())
@@ -251,7 +251,7 @@ impl Distributor {
             let mut sel = Select::with_timeout(Duration::from_millis(500));
             'select: loop {
                 // check for new connections
-                if let Ok(sock) = sel.recv(&conn_rx) {
+                if let Ok(sock) = sel.recv(conn_rx) {
                     match self.new_tcp_conn(sock) {
                         Err(e) => warn!("error handling new client connection: {}", e),
                         Ok(client) => clients.push(client),

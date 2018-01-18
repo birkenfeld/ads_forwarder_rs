@@ -78,7 +78,7 @@ impl Scanner {
                 self.scan_addr(self.if_addrs[if_name].0, broadcast, false),
             Scan::Everything => {
                 let mut all = Vec::new();
-                for (if_name, &(if_addr, _)) in self.if_addrs.iter() {
+                for (if_name, &(if_addr, _)) in &self.if_addrs {
                     debug!("scanning interface {}", if_name);
                     all.extend(self.scan_addr(if_addr, broadcast, false)?);
                 }
@@ -86,7 +86,7 @@ impl Scanner {
             }
             Scan::NetId(netid) => {
                 // scan all interfaces until we found our NetID
-                for (if_name, &(if_addr, _)) in self.if_addrs.iter() {
+                for (if_name, &(if_addr, _)) in &self.if_addrs {
                     debug!("scanning interface {}", if_name);
                     let bhs = self.scan_addr(if_addr, broadcast, false)?;
                     if let Some(bh) = bhs.into_iter().find(|bh| bh.netid == netid) {
