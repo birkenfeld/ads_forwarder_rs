@@ -32,13 +32,12 @@ static A: System = System;
 extern crate log;
 extern crate mlzlog;
 extern crate byteorder;
+#[macro_use]
 extern crate structopt;
 extern crate interfaces;
 extern crate itertools;
 extern crate signalbool;
 extern crate crossbeam_channel as channel;
-#[macro_use]
-extern crate structopt_derive;
 
 use std::{net, process};
 use structopt::StructOpt;
@@ -62,8 +61,8 @@ pub struct Options {
     _ignore2: bool,
     #[structopt(short="M", long="mangle", help="Ignored for compatibility")]
     _ignore3: bool,
-    #[structopt(short="v", long="verbose", help="Increase verbosity")]
-    verbosity: u64,
+    #[structopt(short="v", long="verbose", help="Increase verbosity", parse(from_occurrences))]
+    verbosity: u8,
     #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     arg: Option<String>,
 }
