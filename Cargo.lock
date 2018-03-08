@@ -1,6 +1,6 @@
 [[package]]
 name = "ads_forwarder_rs"
-version = "0.1.0"
+version = "1.0.2"
 dependencies = [
  "byteorder 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-channel 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
