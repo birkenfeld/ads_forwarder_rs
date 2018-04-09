@@ -20,16 +20,12 @@
 //
 // *****************************************************************************
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::Write;
-use std::net::{ToSocketAddrs, SocketAddr, IpAddr, Ipv4Addr};
 use std::str::{self, FromStr};
-use std::thread;
 use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use itertools::Itertools;
-use interfaces;
 
 pub const BECKHOFF_BC_UDP_PORT: u16 = 48847; // 0xBECF
 pub const BECKHOFF_TCP_PORT:    u16 = 48898; // 0xBF02
@@ -38,70 +34,6 @@ pub const BECKHOFF_UDP_MAGIC:   u32 = 0x_71_14_66_03;
 
 pub const FWDER_NETID: AmsNetId = AmsNetId([10, 1, 0, 0, 1, 1]);
 pub const DUMMY_NETID: AmsNetId = AmsNetId([1, 1, 1, 1, 1, 1]);
-
-
-/// Spawn a thread with a given name.
-pub fn spawn<F: Send + 'static + FnOnce()>(name: &str, f: F) {
-    let _ = thread::Builder::new().name(name.into()).spawn(f);
-}
-
-
-fn printable(ch: &u8) -> char {
-    if *ch >= 32 && *ch <= 127 { *ch as char } else { '.' }
-}
-
-/// Print a hexdump of a byte slice in the usual format.
-pub fn hexdump(mut data: &[u8]) {
-    let mut addr = 0;
-    while !data.is_empty() {
-        let (line, rest) = data.split_at(data.len().min(16));
-        println!("{:#06x}: {:02x}{} | {}", addr,
-                 line.iter().format(" "),
-                 (0..16 - line.len()).map(|_| "   ").format(""),
-                 line.iter().map(printable).format(""));
-        addr += 16;
-        data = rest;
-    }
-    println!();
-}
-
-/// Extract the Ipv4Addr from the given IpAddr.
-pub fn unwrap_ipv4(addr: IpAddr) -> Ipv4Addr {
-    match addr {
-        IpAddr::V6(_) => panic!("IPv4 address required"),
-        IpAddr::V4(ip) => ip
-    }
-}
-
-/// Determine if two addresses are in the same network, determined by a netmask.
-pub fn in_same_net<T: Into<u32>>(addr1: T, addr2: T, netmask: T) -> bool {
-    let (addr1, addr2, netmask) = (addr1.into(), addr2.into(), netmask.into());
-    addr1 & netmask == addr2 & netmask
-}
-
-/// Find the IPv4 address and netmask in the given list of addresses.
-fn ipv4_addr(addresses: &[interfaces::Address]) -> Option<(Ipv4Addr, Ipv4Addr)> {
-    addresses.iter().find(|ad| ad.kind == interfaces::Kind::Ipv4)
-                    .map(|ad| (unwrap_ipv4(ad.addr.unwrap().ip()),
-                               unwrap_ipv4(ad.mask.unwrap().ip())))
-}
-
-/// Determine IPv4 addresses of all interfaces in the system.
-pub fn find_ipv4_addrs() -> HashMap<String, (Ipv4Addr, Ipv4Addr)> {
-    interfaces::Interface::get_all().unwrap().into_iter().filter_map(|iface| {
-        ipv4_addr(&iface.addresses).map(|addr| (iface.name.clone(), addr))
-    }).collect()
-}
-
-/// Determine IPv4 address of a host name.
-pub fn lookup_ipv4(host: &str) -> Option<Ipv4Addr> {
-    for addr in (host, 0).to_socket_addrs().ok()? {
-        if let SocketAddr::V4(v4addr) = addr {
-            return Some(*v4addr.ip());
-        }
-    }
-    None
-}
 
 
 /// Represents an AMS NetID.

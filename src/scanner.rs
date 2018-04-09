@@ -24,10 +24,11 @@ use std::error::Error;
 use std::collections::HashMap;
 use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
+use mlzutil::{self, bytes::hexdump};
 
 use forwarder::{Beckhoff, BhType};
-use util::{AmsNetId, hexdump, find_ipv4_addrs, unwrap_ipv4, in_same_net, FWDER_NETID,
-           BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT, BECKHOFF_TCP_PORT, UdpMessage};
+use util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
+           BECKHOFF_TCP_PORT, UdpMessage};
 
 
 /// Determines what to scan.
@@ -46,7 +47,7 @@ pub struct Scanner {
 
 impl Scanner {
     pub fn new(dump: bool) -> Scanner {
-        Scanner { dump, if_addrs: find_ipv4_addrs() }
+        Scanner { dump, if_addrs: mlzutil::net::iface::find_ipv4_addrs() }
     }
 
     pub fn if_exists(&self, if_name: &str) -> bool {
@@ -131,7 +132,7 @@ impl Scanner {
                 info!("scan: reply from {}", reply_addr);
                 hexdump(reply);
             }
-            let bh_addr = unwrap_ipv4(reply_addr.ip());
+            let bh_addr = mlzutil::net::unwrap_ipv4(reply_addr.ip());
             if reply_addr.port() == BECKHOFF_BC_UDP_PORT {
                 if reply.len() == 42 && reply[0..4] == [1, 0, 0, 0x80] {
                     let netid = AmsNetId::from_slice(&reply[10..16]);
@@ -164,14 +165,14 @@ impl Scanner {
     fn find_if_addr(&self, bh_addr: Ipv4Addr) -> Ipv4Addr {
         // check for local IPs
         for &(if_addr, if_mask) in self.if_addrs.values() {
-            if in_same_net(bh_addr, if_addr, if_mask) {
+            if mlzutil::net::in_same_net(bh_addr, if_addr, if_mask) {
                 return if_addr;
             }
         }
 
         // not a local IP, check by trying to connect using TCP
         match TcpStream::connect((bh_addr, BECKHOFF_TCP_PORT)).and_then(|sock| sock.local_addr()) {
-            Ok(addr) => unwrap_ipv4(addr.ip()),
+            Ok(addr) => mlzutil::net::unwrap_ipv4(addr.ip()),
             _ => panic!("Did not find local address for route to Beckhoff {}", bh_addr)
         }
     }

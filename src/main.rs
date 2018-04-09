@@ -31,6 +31,7 @@ static A: System = System;
 #[macro_use]
 extern crate log;
 extern crate mlzlog;
+extern crate mlzutil;
 extern crate byteorder;
 #[macro_use]
 extern crate structopt;
@@ -85,7 +86,7 @@ fn main() {
     } else if let Ok(netid) = what.parse::<util::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
         scanner.scan(Scan::NetId(netid))
-    } else if let Some(addr) = util::lookup_ipv4(&what) {
+    } else if let Some(addr) = mlzutil::net::lookup_ipv4(&what) {
         debug!("scanning host {}", what);
         scanner.scan(Scan::Address(addr))
     } else if what.is_empty() {

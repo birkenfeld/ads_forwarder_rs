@@ -15,5 +15,6 @@ structopt = "*"
 interfaces = "*"
 signalbool = "*"
 itertools = "*"
+mlzutil = { version = "*", features = ["interfaces"] }
 mlzlog = "*"
 log = "*"
