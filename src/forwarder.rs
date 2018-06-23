@@ -26,7 +26,7 @@ use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
-use channel::{self, Select, Receiver, Sender};
+use channel::{self, after, Receiver, Sender};
 use signalbool::{Flag, Signal, SignalBool};
 use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
@@ -160,9 +160,7 @@ fn read_loop(mut sock: TcpStream, chan: Sender<ReadEvent>) {
             return;
         }
         // send message to distributor
-        if chan.send(ReadEvent::Msg(AdsMessage::from_bytes(message))).is_err() {
-            return;
-        }
+        chan.send(ReadEvent::Msg(AdsMessage::from_bytes(message)));
     }
 }
 
@@ -248,58 +246,68 @@ impl Distributor {
                 }
                 return;
             }
-            // select loop - always break after Ok replies!
-            let mut sel = Select::with_timeout(Duration::from_millis(500));
+            // select loop
             'select: loop {
-                // check for new connections
-                if let Ok(sock) = sel.recv(conn_rx) {
-                    match self.new_tcp_conn(sock) {
-                        Err(e) => warn!("error handling new client connection: {}", e),
-                        Ok(client) => clients.push(client),
-                    }
-                    break 'select;
-                }
-                // check for replies from Beckhoff
-                if let Ok(x) = sel.recv(&bh_chan) {
-                    if let ReadEvent::Msg(mut reply) = x {
-                        for client in &mut clients {
-                            if client.virtual_id == reply.dest_id() {
-                                self.new_beckhoff_msg(reply, client);
-                                break 'select;
+                let (client_idx, event) = select! { // timeout?
+                    // check for new connections
+                    recv(conn_rx, sock) => {
+                        if let Some(sock) = sock {
+                            match self.new_tcp_conn(sock) {
+                                Err(e) => warn!("error handling new client connection: {}", e),
+                                Ok(client) => clients.push(client),
                             }
                         }
-                        if reply.dest_id() != DUMMY_NETID {
-                            // unhandled message, something went wrong...
-                            warn!("message from Beckhoff to {} not forwarded", reply.dest_id());
-                        }
-                    } else {
-                        error!("Beckhoff closed socket!");
-                        // note: this will close all client connections
-                        // and clients have to reconnect
-                        return;
-                    }
-                    break 'select;
-                }
-                // check for requests from clients
-                for mut client in &mut clients {
-                    if let Ok(x) = sel.recv(&client.chan) {
-                        if let ReadEvent::Msg(mut request) = x {
-                            self.new_client_msg(request, &mut client, &mut bh_sock);
+                        continue;
+                    },
+                    // check for replies from Beckhoff
+                    recv(bh_chan, event) => {
+                        if let Some(ReadEvent::Msg(reply)) = event {
+                            for client in &mut clients {
+                                if client.virtual_id == reply.dest_id() {
+                                    self.new_beckhoff_msg(reply, client);
+                                    break 'select;
+                                }
+                            }
+                            if reply.dest_id() != DUMMY_NETID {
+                                // unhandled message, something went wrong...
+                                warn!("message from Beckhoff to {} not forwarded", reply.dest_id());
+                            }
                         } else {
-                            // client socket closed -- remove it on next iteration
-                            info!("connection from {} closed", client.peer);
-                            let cid = client.virtual_id.0[3];
-                            if cid != 0 {
-                                self.ids.push(cid);
-                            }
-                            cleanup = Some(client.peer);
+                            error!("Beckhoff closed socket!");
+                            // note: this will close all client connections
+                            // and clients have to reconnect
+                            return;
                         }
-                        break 'select;
+                        continue;
+                    },
+                    // check for requests from clients
+                    recv(clients.iter().map(|c| &c.chan), event, from) => {
+                        let mut res = None;
+                        for (client_idx, client) in clients.iter().enumerate() {
+                            if client.chan == *from {
+                                res = Some((client_idx, event));
+                                break;
+                            }
+                        }
+                        res.unwrap()
+                    },
+                    // check for timeout
+                    recv(after(Duration::from_millis(500))) => {
+                        continue;
                     }
-                }
-                // check for timeout
-                if sel.timed_out() {
-                    break 'select;
+                };
+                // only reached for client requests
+                let client = &mut clients[client_idx];
+                if let Some(ReadEvent::Msg(request)) = event {
+                    self.new_client_msg(request, client, &mut bh_sock);
+                } else {
+                    // client socket closed -- remove it on next iteration
+                    info!("connection from {} closed", client.peer);
+                    let cid = client.virtual_id.0[3];
+                    if cid != 0 {
+                        self.ids.push(cid);
+                    }
+                    cleanup = Some(client.peer);
                 }
             }
         }

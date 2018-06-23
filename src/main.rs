@@ -20,13 +20,7 @@
 //
 // *****************************************************************************
 
-// Use the system allocator instead of jemalloc.
-// This allows us to build with the i586 target on Debian 7.
-#![feature(alloc_system, global_allocator, allocator_api)]
-extern crate alloc_system;
-use alloc_system::System;
-#[global_allocator]
-static A: System = System;
+#![feature(nll)]
 
 #[macro_use]
 extern crate log;
@@ -38,6 +32,7 @@ extern crate structopt;
 extern crate interfaces;
 extern crate itertools;
 extern crate signalbool;
+#[macro_use]
 extern crate crossbeam_channel as channel;
 
 use std::{net, process};
@@ -48,6 +43,12 @@ mod forwarder;
 mod util;
 
 use scanner::{Scan, Scanner};
+
+// Use the system allocator instead of jemalloc.
+// This allows us to build with the i586 target on Debian 7.
+use std::alloc::System;
+#[global_allocator]
+static ALLOCATOR: System = System;
 
 /// A forwarder for Beckhoff ADS and UDP connections.
 #[derive(StructOpt)]

@@ -9,7 +9,7 @@ name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-crossbeam-channel = "*"
+crossbeam-channel = { git = "https://github.com/crossbeam-rs/crossbeam-channel" }
 byteorder = "*"
 structopt = "*"
 interfaces = "*"
