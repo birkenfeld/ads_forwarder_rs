@@ -23,6 +23,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::Write;
+use std::ops::Deref;
 use std::str::{self, FromStr};
 use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use itertools::Itertools;
@@ -133,7 +134,7 @@ impl AdsMessage {
 
 
 /// Represents a message in the UDP protocol used by CX Beckhoffs.
-pub struct UdpMessage<T: AsRef<[u8]>> {
+pub struct UdpMessage<T: Deref<Target=[u8]>> {
     pub srcid: AmsNetId,
     pub srcport: u16,
     pub op: u32,
@@ -216,12 +217,12 @@ impl UdpMessage<Vec<u8>> {
     }
 }
 
-impl<T: AsRef<[u8]>> UdpMessage<T> {
+impl<T: Deref<Target=[u8]>> UdpMessage<T> {
     fn map_desig<'a, O, F>(&'a self, desig: u16, map: F) -> Option<O>
         where F: Fn(&'a [u8]) -> Option<O>
     {
         self.items.iter().find(|item| item.0 == desig)
-                         .and_then(|&(_, i, j)| map(&self.data.as_ref()[i..j]))
+                         .and_then(|&(_, i, j)| map(&self.data[i..j]))
     }
 
     pub fn get_bytes(&self, desig: u16) -> Option<&[u8]> {
@@ -237,14 +238,14 @@ impl<T: AsRef<[u8]>> UdpMessage<T> {
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
-        let mut v = Vec::with_capacity(self.data.as_ref().len() + 24);
+        let mut v = Vec::with_capacity(self.data.len() + 24);
         for &n in &[BECKHOFF_UDP_MAGIC, 0, self.op] {
             v.write_u32::<LE>(n).unwrap();
         }
         v.write_all(&self.srcid.0).unwrap();
         v.write_u16::<LE>(self.srcport).unwrap();
         v.write_u32::<LE>(self.items.len() as u32).unwrap();
-        v.extend_from_slice(self.data.as_ref());
+        v.extend_from_slice(&self.data);
         v
     }
 }
