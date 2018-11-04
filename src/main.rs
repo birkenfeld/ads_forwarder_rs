@@ -20,19 +20,14 @@
 //
 // *****************************************************************************
 
-#![feature(nll)]
-
 #[macro_use]
 extern crate log;
 extern crate mlzlog;
 extern crate mlzutil;
 extern crate byteorder;
-#[macro_use]
 extern crate structopt;
-extern crate interfaces;
 extern crate itertools;
 extern crate signalbool;
-#[macro_use]
 extern crate crossbeam_channel as channel;
 
 use std::{net, process};

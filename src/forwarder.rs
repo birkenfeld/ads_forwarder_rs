@@ -26,7 +26,7 @@ use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
-use channel::{self, after, Receiver, Sender};
+use channel::{self, Receiver, Sender, Select};
 use signalbool::{Flag, Signal, SignalBool};
 use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
@@ -126,6 +126,8 @@ struct Distributor {
     ids: Vec<u8>,
     dump: bool,
     sig: SignalBool,
+    clients: Vec<ClientConn>,
+    conn_rx: Receiver<TcpStream>,
 }
 
 /// Represents a single client connection.
@@ -160,10 +162,20 @@ fn read_loop(mut sock: TcpStream, chan: Sender<ReadEvent>) {
             return;
         }
         // send message to distributor
-        chan.send(ReadEvent::Msg(AdsMessage::from_bytes(message)));
+        if chan.send(ReadEvent::Msg(AdsMessage::from_bytes(message))).is_err() {
+            return;
+        }
     }
 }
 
+enum DistEvent {
+    None,
+    BeckhoffMessage(AdsMessage),
+    BeckhoffQuit,
+    ClientMessage(usize, AdsMessage),
+    ClientQuit(usize),
+    NewClient(TcpStream),
+}
 
 impl Distributor {
     /// Connect a TCP socket to the Beckhoff, start a reader thread and return
@@ -211,11 +223,12 @@ impl Distributor {
     ///
     /// Opens a connection and handles messages; if the Beckhoff connection
     /// is closed, it is tried to reopen every second.
-    fn run(&mut self, conn_rx: Receiver<TcpStream>) {
+    fn run(mut self) {
         mlzlog::set_thread_prefix("TCP: ".into());
         while !self.sig.caught() {
+            self.clients.clear();
             match self.connect() {
-                Ok((bh_sock, bh_chan)) => self.handle(&conn_rx, bh_sock, bh_chan),
+                Ok((bh_sock, bh_chan)) => self.handle(bh_sock, bh_chan),
                 Err(e) => {
                     error!("error on connection to Beckhoff: {}", e);
                     thread::sleep(Duration::from_secs(1));
@@ -224,17 +237,40 @@ impl Distributor {
         }
     }
 
-    /// Handle messages once the connection to the Beckhoff is established.
-    fn handle(&mut self, conn_rx: &Receiver<TcpStream>, mut bh_sock: TcpStream,
-              bh_chan: Receiver<ReadEvent>)
-    {
-        let mut clients = Vec::<ClientConn>::new();
-        let mut cleanup = None;
-        loop {
-            // cleanup clients
-            if let Some(peer) = cleanup.take() {
-                clients.retain(|client| client.peer != peer);
+    /// Wait for an event from all possible sources.
+    fn get_event(&self, bh_chan: &Receiver<ReadEvent>) -> DistEvent {
+        let mut select = Select::new();
+        for client in &self.clients {
+            select.recv(&client.chan);
+        }
+        let new_conn = select.recv(&self.conn_rx);
+        select.recv(bh_chan);
+        let event = select.select_timeout(Duration::from_millis(500));
+        if let Ok(event) = event {
+            let index = event.index();
+            if index < new_conn {
+                if let Ok(ReadEvent::Msg(msg)) = event.recv(&self.clients[index].chan) {
+                    DistEvent::ClientMessage(index, msg)
+                } else {
+                    DistEvent::ClientQuit(index)
+                }
+            } else if index == new_conn {
+                DistEvent::NewClient(event.recv(&self.conn_rx).unwrap())
+            } else {
+                if let Ok(ReadEvent::Msg(msg)) = event.recv(bh_chan) {
+                    DistEvent::BeckhoffMessage(msg)
+                } else {
+                    DistEvent::BeckhoffQuit
+                }
             }
+        } else {
+            DistEvent::None
+        }
+    }
+
+    /// Handle messages once the connection to the Beckhoff is established.
+    fn handle(&mut self, mut bh_sock: TcpStream, bh_chan: Receiver<ReadEvent>) {
+        'select: loop {
             // check for interrupt signal
             if self.sig.caught() {
                 info!("exiting, removing routes...");
@@ -246,69 +282,39 @@ impl Distributor {
                 }
                 return;
             }
-            // select loop
-            'select: loop {
-                let (client_idx, event) = select! { // timeout?
-                    // check for new connections
-                    recv(conn_rx, sock) => {
-                        if let Some(sock) = sock {
-                            match self.new_tcp_conn(sock) {
-                                Err(e) => warn!("error handling new client connection: {}", e),
-                                Ok(client) => clients.push(client),
-                            }
+            // get an event
+            match self.get_event(&bh_chan) {
+                DistEvent::NewClient(sock) => if let Err(e) = self.new_tcp_conn(sock) {
+                    warn!("error handling new client connection: {}", e);
+                },
+                DistEvent::ClientMessage(index, msg) =>
+                    self.new_client_msg(msg, index, &mut bh_sock),
+                DistEvent::BeckhoffMessage(msg) => {
+                    for client in &self.clients {
+                        if client.virtual_id == msg.dest_id() {
+                            self.new_beckhoff_msg(msg, client);
+                            continue 'select;
                         }
-                        continue;
-                    },
-                    // check for replies from Beckhoff
-                    recv(bh_chan, event) => {
-                        if let Some(ReadEvent::Msg(reply)) = event {
-                            for client in &mut clients {
-                                if client.virtual_id == reply.dest_id() {
-                                    self.new_beckhoff_msg(reply, client);
-                                    break 'select;
-                                }
-                            }
-                            if reply.dest_id() != DUMMY_NETID {
-                                // unhandled message, something went wrong...
-                                warn!("message from Beckhoff to {} not forwarded", reply.dest_id());
-                            }
-                        } else {
-                            error!("Beckhoff closed socket!");
-                            // note: this will close all client connections
-                            // and clients have to reconnect
-                            return;
-                        }
-                        continue;
-                    },
-                    // check for requests from clients
-                    recv(clients.iter().map(|c| &c.chan), event, from) => {
-                        let mut res = None;
-                        for (client_idx, client) in clients.iter().enumerate() {
-                            if client.chan == *from {
-                                res = Some((client_idx, event));
-                                break;
-                            }
-                        }
-                        res.unwrap()
-                    },
-                    // check for timeout
-                    recv(after(Duration::from_millis(500))) => {
-                        continue;
                     }
-                };
-                // only reached for client requests
-                let client = &mut clients[client_idx];
-                if let Some(ReadEvent::Msg(request)) = event {
-                    self.new_client_msg(request, client, &mut bh_sock);
-                } else {
-                    // client socket closed -- remove it on next iteration
+                    if msg.dest_id() != DUMMY_NETID {
+                        // unhandled message, something went wrong...
+                        warn!("message from Beckhoff to {} not forwarded", msg.dest_id());
+                    }
+                },
+                DistEvent::ClientQuit(index) => {
+                    let client = self.clients.swap_remove(index);
                     info!("connection from {} closed", client.peer);
                     let cid = client.virtual_id.0[3];
                     if cid != 0 {
                         self.ids.push(cid);
                     }
-                    cleanup = Some(client.peer);
-                }
+                },
+                DistEvent::BeckhoffQuit => {
+                    error!("Beckhoff closed socket!");
+                    // note: this will close all client connections, they have to reconnect
+                    return;
+                },
+                DistEvent::None => continue
             }
         }
     }
@@ -318,7 +324,7 @@ impl Distributor {
     /// Starts a thread to read messages from the connection, and sets up
     /// a channel to receive them.  Also assigns a virtual NetID to to use
     /// for the back-route from the Beckhoff.
-    fn new_tcp_conn(&mut self, sock: TcpStream) -> FwdResult<ClientConn> {
+    fn new_tcp_conn(&mut self, sock: TcpStream) -> FwdResult<()> {
         let peer = sock.peer_addr()?;
         info!("new connection from {}", peer);
         let (cl_tx, cl_rx) = channel::unbounded();
@@ -327,13 +333,14 @@ impl Distributor {
         let id = self.ids.pop().ok_or("too many clients")?;
         let virtual_id = AmsNetId([10, 1, 0, id, 1, 1]);
         info!("assigned virtual NetID {}", virtual_id);
-        Ok(ClientConn { sock, peer, virtual_id, chan: cl_rx,
-                        client_id: Default::default(),
-                        clients_bh_id: Default::default() })
+        self.clients.push(ClientConn { sock, peer, virtual_id, chan: cl_rx,
+                                       client_id: Default::default(),
+                                       clients_bh_id: Default::default() });
+        Ok(())
     }
 
     /// Handles a message coming from the Beckhoff intended for the given client.
-    fn new_beckhoff_msg(&mut self, mut reply: AdsMessage, client: &mut ClientConn) {
+    fn new_beckhoff_msg(&self, mut reply: AdsMessage, client: &ClientConn) {
         reply.patch_source_id(&client.clients_bh_id);
         reply.patch_dest_id(&client.client_id);
         debug!("{} bytes Beckhoff -> client ({})",
@@ -347,14 +354,15 @@ impl Distributor {
         }
         // if the socket is closed, the next read attempt will return Quit
         // and the client will be dropped, so only log send failures here
-        if let Err(e) = client.sock.write_all(&reply.0) {
+        if let Err(e) = (&client.sock).write_all(&reply.0) {
             warn!("error forwarding reply to client: {}", e);
         }
     }
 
     /// Handles a message coming from the given client.
-    fn new_client_msg(&self, mut request: AdsMessage, client: &mut ClientConn, bh_sock: &mut TcpStream) {
+    fn new_client_msg(&mut self, mut request: AdsMessage, client: usize, bh_sock: &mut TcpStream) {
         // first request: remember NetIDs of the requests
+        let client = &mut self.clients[client];
         if client.client_id.is_zero() {
             info!("client {} has NetID {}",
                   client.peer, request.source_id());
@@ -434,15 +442,15 @@ impl Forwarder {
 
     /// Run the TCP distributor, receiving new client connections on the given channel.
     fn run_tcp_distributor(&mut self, conn_rx: Receiver<TcpStream>) {
-        let mut distributor = Distributor {
+        Distributor {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
             dump: self.opts.verbosity >= 2,
             sig: SignalBool::new(&[Signal::SIGINT, Signal::SIGTERM],
                                  Flag::Restart).unwrap(),
-        };
-
-        distributor.run(conn_rx);
+            clients: Vec::with_capacity(4),
+            conn_rx,
+        }.run();
     }
 
     /// Run the TCP listener, sending new client connections to the given channel.
