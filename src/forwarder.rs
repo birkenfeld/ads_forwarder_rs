@@ -31,9 +31,10 @@ use signalbool::{Flag, Signal, SignalBool};
 use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
 
-use Options;
-use util::{AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
-           BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID, DUMMY_NETID};
+use crate::Options;
+use crate::util::{AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
+                  BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID,
+                  DUMMY_NETID};
 
 type FwdResult<T> = Result<T, Box<Error>>;
 
@@ -209,7 +210,7 @@ impl Distributor {
                                   AdsMessage::DEVINFO, &[]);
 
         spawn("keepalive", move || loop {
-            mlzlog::set_thread_prefix("TCP: ".into());
+            mlzlog::set_thread_prefix("TCP: ");
             thread::sleep(Duration::from_secs(3));
             if bh_sock.write_all(&msg.0).is_err() {
                 debug!("keepalive thread exiting");
@@ -224,7 +225,7 @@ impl Distributor {
     /// Opens a connection and handles messages; if the Beckhoff connection
     /// is closed, it is tried to reopen every second.
     fn run(mut self) {
-        mlzlog::set_thread_prefix("TCP: ".into());
+        mlzlog::set_thread_prefix("TCP: ");
         while !self.sig.caught() {
             self.clients.clear();
             match self.connect() {

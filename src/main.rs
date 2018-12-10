@@ -37,7 +37,7 @@ mod scanner;
 mod forwarder;
 mod util;
 
-use scanner::{Scan, Scanner};
+use crate::scanner::{Scan, Scanner};
 
 // Use the system allocator instead of jemalloc.
 // This allows us to build with the i586 target on Debian 7.

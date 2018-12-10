@@ -26,9 +26,9 @@ use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
 use mlzutil::{self, bytes::hexdump};
 
-use forwarder::{Beckhoff, BhType};
-use util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
-           BECKHOFF_TCP_PORT, UdpMessage};
+use crate::forwarder::{Beckhoff, BhType};
+use crate::util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
+                  BECKHOFF_TCP_PORT, UdpMessage};
 
 
 /// Determines what to scan.

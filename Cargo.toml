@@ -1,19 +1,20 @@
 [package]
 name = "ads_forwarder_rs"
-version = "1.0.3"
+version = "1.0.4"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
 description = "Forwarder for Beckhoff TCP/UDP connections."
+edition = "2018"
 
 [[bin]]
 name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-crossbeam-channel = "0.3"
-byteorder = "1.2"
-structopt = "0.2"
-signalbool = "0.2"
-itertools = "0.7"
-mlzutil = { version = "0.1", features = ["interfaces"] }
-mlzlog = "0.4"
-log = "0.4"
+crossbeam-channel = "0.3.3"
+byteorder = "1.2.7"
+structopt = "0.2.14"
+signalbool = "0.2.2"
+itertools = "0.8"
+mlzutil = { version = "0.1.1", features = ["interfaces"] }
+mlzlog = "0.5.1"
+log = "0.4.6"
