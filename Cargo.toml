@@ -10,11 +10,11 @@ name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-crossbeam-channel = "0.3.3"
-byteorder = "1.2.7"
+crossbeam-channel = "0.3.8"
+byteorder = "1.3.1"
 structopt = "0.2.14"
 signalbool = "0.2.2"
-itertools = "0.8"
+itertools = "0.8.0"
 mlzutil = { version = "0.1.1", features = ["interfaces"] }
 mlzlog = "0.5.1"
 log = "0.4.6"
