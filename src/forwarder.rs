@@ -126,6 +126,7 @@ struct Distributor {
     sig: SignalBool,
     clients: Vec<ClientConn>,
     conn_rx: Receiver<TcpStream>,
+    bh_tx: Sender<ReadEvent>,
 }
 
 /// Represents a single client connection.
@@ -192,7 +193,9 @@ impl Distributor {
 
         // send BH replies from socket to distributor
         let bh_sock2 = bh_sock.try_clone()?;
-        spawn("BH reader", move || read_loop(bh_sock2, bh_tx));
+        let bh_tx2 = bh_tx.clone();
+        spawn("BH reader", move || read_loop(bh_sock2, bh_tx2));
+        self.bh_tx = bh_tx;
         Ok((bh_sock, bh_rx))
     }
 
@@ -324,6 +327,12 @@ impl Distributor {
     /// for the back-route from the Beckhoff.
     fn new_tcp_conn(&mut self, sock: TcpStream) -> FwdResult<()> {
         let peer = sock.peer_addr()?;
+        if peer.ip() == self.bh.bh_addr {
+            info!("new back-connection from Beckhoff");
+            let bh_tx = self.bh_tx.clone();
+            spawn("BH reader", move || read_loop(sock, bh_tx));
+            return Ok(())
+        }
         info!("new connection from {}", peer);
         let (cl_tx, cl_rx) = channel::unbounded();
         let sock2 = sock.try_clone()?;
@@ -448,6 +457,7 @@ impl Forwarder {
                                  Flag::Restart).unwrap(),
             clients: Vec::with_capacity(4),
             conn_rx,
+            bh_tx: channel::unbounded().0,
         }.run();
     }
 
