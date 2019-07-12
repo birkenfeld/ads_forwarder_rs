@@ -20,7 +20,6 @@
 //
 // *****************************************************************************
 
-use std::error::Error;
 use std::collections::HashMap;
 use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
@@ -28,7 +27,7 @@ use mlzutil::{self, bytes::hexdump};
 
 use crate::forwarder::{Beckhoff, BhType};
 use crate::util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
-                  BECKHOFF_TCP_PORT, UdpMessage};
+                  BECKHOFF_TCP_PORT, UdpMessage, FwdResult};
 
 
 /// Determines what to scan.
@@ -70,7 +69,7 @@ impl Scanner {
         }
     }
 
-    fn scan_inner(&self, what: Scan) -> Result<Vec<Beckhoff>, Box<Error>> {
+    fn scan_inner(&self, what: Scan) -> FwdResult<Vec<Beckhoff>> {
         let broadcast = [255, 255, 255, 255].into();
         match what {
             Scan::Address(bh_addr) =>
@@ -100,7 +99,7 @@ impl Scanner {
     }
 
     fn scan_addr(&self, bind_addr: Ipv4Addr, send_addr: Ipv4Addr, single_reply: bool)
-                 -> Result<Vec<Beckhoff>, Box<Error>> {
+                 -> FwdResult<Vec<Beckhoff>> {
         let udp = UdpSocket::bind((bind_addr, 0))?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;

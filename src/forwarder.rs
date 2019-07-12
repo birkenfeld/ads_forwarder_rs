@@ -20,7 +20,6 @@
 //
 // *****************************************************************************
 
-use std::error::Error;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
@@ -34,9 +33,7 @@ use mlzlog;
 use crate::Options;
 use crate::util::{AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
                   BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID,
-                  DUMMY_NETID};
-
-type FwdResult<T> = Result<T, Box<Error>>;
+                  DUMMY_NETID, FwdResult};
 
 
 #[derive(Clone, PartialEq)]

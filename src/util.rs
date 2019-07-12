@@ -36,6 +36,8 @@ pub const BECKHOFF_UDP_MAGIC:   u32 = 0x_71_14_66_03;
 pub const FWDER_NETID: AmsNetId = AmsNetId([10, 1, 0, 0, 1, 1]);
 pub const DUMMY_NETID: AmsNetId = AmsNetId([1, 1, 1, 1, 1, 1]);
 
+pub type FwdResult<T> = Result<T, Box<dyn Error>>;
+
 
 /// Represents an AMS NetID.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -187,7 +189,7 @@ impl UdpMessage<Vec<u8>> {
         self.items.push((desig, start, self.data.len()));
     }
 
-    pub fn parse(mut data: &[u8], op: u32) -> Result<UdpMessage<&[u8]>, Box<Error>> {
+    pub fn parse(mut data: &[u8], op: u32) -> FwdResult<UdpMessage<&[u8]>> {
         if data.read_u32::<LE>()? != BECKHOFF_UDP_MAGIC {
             Err("magic not recognized")?;
         }
