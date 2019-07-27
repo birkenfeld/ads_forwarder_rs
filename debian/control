@@ -1,0 +1,15 @@
+Source: ads-forwarder
+Section: misc
+Priority: optional
+Maintainer: Georg Brandl <g.brandl@fz-juelich.de>
+Build-Depends: debhelper-compat (= 11),
+ cargo
+Standards-Version: 4.3.0
+
+Package: ads-forwarder
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Tool to forward Beckhoff ADS connections
+ A small tool that can scan for Beckhoff PLCs and forward connections
+ through intermediate hosts. It also removes the need to know the
+ AMS NetID of the target, or to explicitly set routes on it.

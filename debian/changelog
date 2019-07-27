@@ -1,0 +1,50 @@
+ads-forwarder (1.0.6) unstable; urgency=medium
+
+  * update dependencies, fix maximum ip address length in add-route msg
+  * restructure into submodules
+  * refactor the forwarder/scanner code
+  * reopen Beckhoff connection on failure, handle more errors properly
+  * update mlzlog, use more consistent terminology
+  * Some more cleanup and documentation.
+  * remove unused external packages
+  * small changes in scanner interface
+  * fixup "scan everything" and "scan address" cases
+  * move away from fixed structures for UDP
+  * use the system allocator
+  * forwarder: add backroute earlier
+  * move away from structure! altogether
+  * add a udp-only forwarder mode
+  * distinguish CX with TC2/TC3, dont use temporary route for TC2
+  * make interface/ip argument optional; display hint about -F
+  * move more UDP message parsing into util
+  * when scanning for NetID, stop after one is found
+  * interfaces 0.4 is now released
+  * avoid allocation when parsing UDP message
+  * enable lookup of hostnames on cmdline
+  * routing: try different admin passwords, longer timeout
+  * scanner: try to find local addr for non-local BHs
+  * remove forwarder routes on quit
+  * reuse client IDs after closing
+  * fixup select loop
+  * signals: handle SIGTERM too
+  * add a README
+  * some clippying
+  * update to structopt 0.2
+  * remove use of deprecated lookup API
+  * dependency update
+  * fixup cargo version
+  * use mlzutil package
+  * port to new crossbeam-channel
+  * dependency update
+  * switch to the newest channel iteration
+  * update to Rust 2018, mlzlog 0.5
+  * dependency update
+  * dependency update
+  * dependency update
+  * use "dyn Error"
+  * dependency update
+  * update readme
+  * handle stray back-connections from some Beckhoffs
+  * Add makefile for boxes.
+
+ -- Georg Brandl <gbrandl@jcnsopc78.jcns.frm2>  Sat, 27 Jul 2019 08:09:54 +0200
