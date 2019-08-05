@@ -1,6 +1,6 @@
 [package]
 name = "ads_forwarder_rs"
-version = "1.0.5"
+version = "1.0.9"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
 description = "Forwarder for Beckhoff TCP/UDP connections."
 edition = "2018"
