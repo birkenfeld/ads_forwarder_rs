@@ -14,7 +14,7 @@ ads-forwarder (1.0.6) unstable; urgency=medium
   * forwarder: add backroute earlier
   * move away from structure! altogether
   * add a udp-only forwarder mode
-  * distinguish CX with TC2/TC3, dont use temporary route for TC2
+  * distinguish CX with TC2/TC3, don't use temporary route for TC2
   * make interface/ip argument optional; display hint about -F
   * move more UDP message parsing into util
   * when scanning for NetID, stop after one is found

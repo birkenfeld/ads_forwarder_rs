@@ -2,9 +2,9 @@ Source: ads-forwarder
 Section: misc
 Priority: optional
 Maintainer: Georg Brandl <g.brandl@fz-juelich.de>
-Build-Depends: debhelper-compat (= 11),
+Build-Depends: debhelper (>= 11~),
  cargo
-Standards-Version: 4.3.0
+Standards-Version: 4.1.4
 
 Package: ads-forwarder
 Architecture: any
