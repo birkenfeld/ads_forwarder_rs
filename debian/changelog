@@ -1,3 +1,13 @@
+ads-forwarder (1.0.8) unstable; urgency=low
+
+  [ Georg Brandl ]
+  * Add debian files
+  * Make debian files compatible with compat 11
+
+  [ Jenkins ]
+
+ -- Jenkins <jenkins@debuild.taco.frm2>  Mon, 05 Aug 2019 08:22:38 +0200
+
 ads-forwarder (1.0.6) unstable; urgency=medium
 
   * update dependencies, fix maximum ip address length in add-route msg
