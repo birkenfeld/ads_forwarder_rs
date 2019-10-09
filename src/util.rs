@@ -20,11 +20,11 @@
 //
 // *****************************************************************************
 
-use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::Write;
 use std::ops::Deref;
 use std::str::{self, FromStr};
+use anyhow::{bail, Error, Result};
 use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use itertools::Itertools;
 
@@ -35,8 +35,6 @@ pub const BECKHOFF_UDP_MAGIC:   u32 = 0x_71_14_66_03;
 
 pub const FWDER_NETID: AmsNetId = AmsNetId([10, 1, 0, 0, 1, 1]);
 pub const DUMMY_NETID: AmsNetId = AmsNetId([1, 1, 1, 1, 1, 1]);
-
-pub type FwdResult<T> = Result<T, Box<dyn Error>>;
 
 
 /// Represents an AMS NetID.
@@ -59,17 +57,17 @@ impl AmsNetId {
 }
 
 impl FromStr for AmsNetId {
-    type Err = &'static str;
+    type Err = Error;
 
     /// Parse a NetID from a string (a.b.c.d.e.f).
     ///
     /// Bytes can be missing in the end; missing bytes are substituted by 1.
-    fn from_str(s: &str) -> Result<AmsNetId, &'static str> {
+    fn from_str(s: &str) -> Result<AmsNetId, Error> {
         let mut arr = [1; 6];
         for (i, part) in s.split('.').enumerate() {
             match (arr.get_mut(i), part.parse()) {
                 (Some(loc), Ok(byte)) => *loc = byte,
-                _ => return Err("invalid NetID string"),
+                _ => bail!("invalid NetID string"),
             }
         }
         Ok(AmsNetId(arr))
@@ -189,15 +187,15 @@ impl UdpMessage<Vec<u8>> {
         self.items.push((desig, start, self.data.len()));
     }
 
-    pub fn parse(mut data: &[u8], op: u32) -> FwdResult<UdpMessage<&[u8]>> {
+    pub fn parse(mut data: &[u8], op: u32) -> Result<UdpMessage<&[u8]>> {
         if data.read_u32::<LE>()? != BECKHOFF_UDP_MAGIC {
-            Err("magic not recognized")?;
+            bail!("magic not recognized");
         }
         if data.read_u32::<LE>()? != 0 {
-            Err("zero bytes missing")?;
+            bail!("zero bytes missing");
         }
         if data.read_u32::<LE>()? != op | 0x8000_0000 {
-            Err("operation acknowledge missing")?;
+            bail!("operation acknowledge missing");
         }
         let srcid = AmsNetId::from_slice(&data[..6]);
         data = &data[6..];
@@ -249,5 +247,17 @@ impl<T: Deref<Target=[u8]>> UdpMessage<T> {
         v.write_u32::<LE>(self.items.len() as u32).unwrap();
         v.extend_from_slice(&self.data);
         v
+    }
+}
+
+/// Simplify logging of anyhow::Chain".
+pub struct ChainDisplay(pub anyhow::Error);
+
+impl fmt::Display for ChainDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (i, err) in self.0.chain().enumerate() {
+            write!(f, "{}{}", if i == 0 { "" } else { ": " }, err)?;
+        }
+        Ok(())
     }
 }

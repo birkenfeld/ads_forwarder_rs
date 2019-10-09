@@ -23,11 +23,12 @@
 use std::collections::HashMap;
 use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
+use anyhow::{anyhow, Context, Result};
 use mlzutil::{self, bytes::hexdump};
 
 use crate::forwarder::{Beckhoff, BhType};
 use crate::util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
-                  BECKHOFF_TCP_PORT, UdpMessage, FwdResult};
+                  BECKHOFF_TCP_PORT, ChainDisplay, UdpMessage};
 
 
 /// Determines what to scan.
@@ -63,13 +64,13 @@ impl Scanner {
         match self.scan_inner(what) {
             Ok(v) => v,
             Err(e) => {
-                error!("during scan: {}", e);
+                error!("during scan: {}", ChainDisplay(e));
                 Vec::new()
             }
         }
     }
 
-    fn scan_inner(&self, what: Scan) -> FwdResult<Vec<Beckhoff>> {
+    fn scan_inner(&self, what: Scan) -> Result<Vec<Beckhoff>> {
         let broadcast = [255, 255, 255, 255].into();
         match what {
             Scan::Address(bh_addr) =>
@@ -88,7 +89,8 @@ impl Scanner {
                 // scan all interfaces until we found our NetID
                 for (if_name, &(if_addr, _)) in &self.if_addrs {
                     debug!("scanning interface {}", if_name);
-                    let bhs = self.scan_addr(if_addr, broadcast, false)?;
+                    let bhs = self.scan_addr(if_addr, broadcast, false)
+                                  .with_context(|| format!("scanning interface {}", if_name))?;
                     if let Some(bh) = bhs.into_iter().find(|bh| bh.netid == netid) {
                         return Ok(vec![bh]);
                     }
@@ -99,8 +101,8 @@ impl Scanner {
     }
 
     fn scan_addr(&self, bind_addr: Ipv4Addr, send_addr: Ipv4Addr, single_reply: bool)
-                 -> FwdResult<Vec<Beckhoff>> {
-        let udp = UdpSocket::bind((bind_addr, 0))?;
+                 -> Result<Vec<Beckhoff>> {
+        let udp = UdpSocket::bind((bind_addr, 0)).context("binding UDP socket")?;
         udp.set_broadcast(true)?;
         udp.set_read_timeout(Some(Duration::from_millis(500)))?;
 
@@ -108,7 +110,8 @@ impl Scanner {
         let bc_msg = [1, 0, 0, 0,
                       0, 0, 33, 0, 3, 0,
                       100, 0, 4, 0, 10, 0];
-        udp.send_to(&bc_msg, (send_addr, BECKHOFF_BC_UDP_PORT))?;
+        udp.send_to(&bc_msg, (send_addr, BECKHOFF_BC_UDP_PORT))
+           .context("sending BC scan broadcast")?;
         debug!("scan: sending BC UDP packet");
         if self.dump {
             hexdump(&bc_msg);
@@ -116,7 +119,8 @@ impl Scanner {
 
         // scan for CXs: "identify" operation in the UDP protocol
         let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000).into_bytes();
-        udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))?;
+        udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))
+            .context("sending CX scan broadcast")?;
         debug!("scan: sending CX UDP packet");
         if self.dump {
             hexdump(&cx_msg);
@@ -144,7 +148,7 @@ impl Scanner {
                 }
             } else if let Ok(msg) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
                 let name = msg.get_str(UdpMessage::HOST).unwrap_or("<???>");
-                let ver = msg.get_bytes(UdpMessage::VERSION).ok_or("no version info")?;
+                let ver = msg.get_bytes(UdpMessage::VERSION).ok_or(anyhow!("no version info"))?;
                 info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
                       msg.srcid, bh_addr);
