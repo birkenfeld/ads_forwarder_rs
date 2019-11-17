@@ -34,7 +34,7 @@ use mlzlog;
 use crate::Options;
 use crate::util::{AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
                   BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID,
-                  DUMMY_NETID, ChainDisplay};
+                  DUMMY_NETID};
 
 
 #[derive(Clone, PartialEq)]
@@ -234,7 +234,7 @@ impl Distributor {
             match self.connect() {
                 Ok((bh_sock, bh_chan)) => self.handle(bh_sock, bh_chan),
                 Err(e) => {
-                    error!("error on connection to Beckhoff: {}", ChainDisplay(e));
+                    error!("error on connection to Beckhoff: {:#}", e);
                     thread::sleep(Duration::from_secs(1));
                 }
             }
@@ -279,17 +279,17 @@ impl Distributor {
             if self.sig.caught() {
                 info!("exiting, removing routes...");
                 if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
-                    warn!("could not remove forwarder route: {}", ChainDisplay(e));
+                    warn!("could not remove forwarder route: {:#}", e);
                 }
                 if let Err(e) = self.bh.remove_routes(&mut bh_sock, "fwdclient") {
-                    warn!("could not remove forwarder client routes: {}", ChainDisplay(e));
+                    warn!("could not remove forwarder client routes: {:#}", e);
                 }
                 return;
             }
             // get an event
             match self.get_event(&bh_chan) {
                 DistEvent::NewClient(sock) => if let Err(e) = self.new_tcp_conn(sock) {
-                    warn!("error handling new client connection: {}", ChainDisplay(e));
+                    warn!("error handling new client connection: {:#}", e);
                 },
                 DistEvent::ClientMessage(index, msg) =>
                     self.new_client_msg(msg, index, &mut bh_sock),

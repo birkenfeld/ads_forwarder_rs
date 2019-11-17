@@ -249,15 +249,3 @@ impl<T: Deref<Target=[u8]>> UdpMessage<T> {
         v
     }
 }
-
-/// Simplify logging of anyhow::Chain".
-pub struct ChainDisplay(pub anyhow::Error);
-
-impl fmt::Display for ChainDisplay {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (i, err) in self.0.chain().enumerate() {
-            write!(f, "{}{}", if i == 0 { "" } else { ": " }, err)?;
-        }
-        Ok(())
-    }
-}

@@ -28,7 +28,7 @@ use mlzutil::{self, bytes::hexdump};
 
 use crate::forwarder::{Beckhoff, BhType};
 use crate::util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
-                  BECKHOFF_TCP_PORT, ChainDisplay, UdpMessage};
+                  BECKHOFF_TCP_PORT, UdpMessage};
 
 
 /// Determines what to scan.
@@ -64,7 +64,7 @@ impl Scanner {
         match self.scan_inner(what) {
             Ok(v) => v,
             Err(e) => {
-                error!("during scan: {}", ChainDisplay(e));
+                error!("during scan: {:#}", e);
                 Vec::new()
             }
         }

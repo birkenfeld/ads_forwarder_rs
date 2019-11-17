@@ -100,7 +100,7 @@ fn main() {
             process::exit(1);
         }
         if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
-            error!("while running forwarder: {}", util::ChainDisplay(e));
+            error!("while running forwarder: {:#}", e);
         }
     } else {
         if beckhoffs.is_empty() {
