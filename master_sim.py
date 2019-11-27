@@ -13,9 +13,10 @@ tgtnetid = 0xc0a8c901
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.connect(('127.0.0.1', BECKHOFF_TCP_PORT))
-print 'connected!'
-while 1:
-    print 'send request...'
+print('connected!')
+
+while True:
+    print('send request...')
     data = struct.pack('<HIIBBHIBBHHHIIIIII',
                        # AMS TCP header: 0, lenght
                        0, 0x2c,
@@ -30,24 +31,24 @@ while 1:
                        # 12 Bytes of 0 (3*int32)
                        0, 0, 0xffffffff)
     sock.sendall(data)
-    print 'read reply'
+    print('read reply')
     try:
         data = b''
         while len(data) < 6:
             newdata = sock.recv(6 - len(data))
             if not newdata:
-                raise ValueError("connection broken")
+                raise ValueError('connection broken')
             data += newdata
         _zero, _size = struct.unpack('<HI', data)
         if _zero != 0:
-            raise ValueError("Wrong Format (zero != 0)")
+            raise ValueError('Wrong Format (zero != 0)')
         while len(data) < _size + 6:
             data += sock.recv(_size + 6 - len(data))
             if len(data) > _size + 6:
-                print "Too much data received: %s %s %r" % (
-                    len(data), _size + 6, data)
+                print(f'Too much data received: {len(data)} {_size + 6} '
+                      f'{data!r}')
     except Exception as e:
-        print "Exception reading from BH:", e
+        print('Exception reading from BH:', e)
         break
     assert socket.ntohl(struct.unpack('<I', data[6:10])[0]) == mynetid
     time.sleep(1)

@@ -7,8 +7,9 @@ BECKHOFF_UDP_PORT2 = 48847  # 0xBECF
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 s.bind(('0.0.0.0', BECKHOFF_UDP_PORT))
-while 1:
-    print 'receiving...'
+
+while True:
+    print('receiving...')
     (msg, addr) = s.recvfrom(3072)
-    print 'sending...'
+    print('sending...')
     s.sendto(msg, addr)
