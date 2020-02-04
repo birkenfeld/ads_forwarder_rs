@@ -1,3 +1,19 @@
+ads-forwarder (1.0.11) unstable; urgency=low
+
+  [ Georg Brandl ]
+  * dependency update
+  * dependency update
+  * update mlzutil
+  * change error handling to the anyhow crate
+  * simplify with new anyhow version
+  * dependency update
+  * Port test scripts to Python 3.
+  * dependency update, remove extern crates
+
+  [ Jenkins ]
+
+ -- Jenkins <jenkins@debuild.taco.frm2>  Tue, 04 Feb 2020 09:06:12 +0100
+
 ads-forwarder (1.0.9) unstable; urgency=low
 
   [ Georg Brandl ]
