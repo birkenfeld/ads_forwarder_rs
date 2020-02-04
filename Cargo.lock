@@ -2,7 +2,7 @@
 # It is not intended for manual editing.
 [[package]]
 name = "ads_forwarder_rs"
-version = "1.0.9"
+version = "1.0.11"
 dependencies = [
  "anyhow 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
