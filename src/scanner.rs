@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
+use log::{debug, info, error};
 use mlzutil::{self, bytes::hexdump};
 
 use crate::forwarder::{Beckhoff, BhType};

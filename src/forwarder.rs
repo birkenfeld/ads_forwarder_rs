@@ -25,8 +25,9 @@ use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
 use anyhow::{anyhow, bail, Context, Result};
+use log::{debug, info, warn, error};
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
-use channel::{self, Receiver, Sender, Select};
+use crossbeam_channel::{self, Receiver, Sender, Select};
 use signalbool::{Flag, Signal, SignalBool};
 use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
@@ -186,7 +187,7 @@ impl Distributor {
         let bh_sock = TcpStream::connect((self.bh.bh_addr, BECKHOFF_TCP_PORT))
             .context("connecting to Beckhoff")?;
         info!("connected to Beckhoff at {}", bh_sock.peer_addr()?);
-        let (bh_tx, bh_rx) = channel::unbounded();
+        let (bh_tx, bh_rx) = crossbeam_channel::unbounded();
 
         // start keep-alive thread
         if self.bh.typ == BhType::BC {
@@ -337,7 +338,7 @@ impl Distributor {
             return Ok(())
         }
         info!("new connection from {}", peer);
-        let (cl_tx, cl_rx) = channel::unbounded();
+        let (cl_tx, cl_rx) = crossbeam_channel::unbounded();
         let sock2 = sock.try_clone()?;
         spawn("client reader", move || read_loop(sock2, cl_tx));
         let id = self.ids.pop().ok_or(anyhow!("too many clients"))?;
@@ -460,7 +461,7 @@ impl Forwarder {
                                  Flag::Restart).unwrap(),
             clients: Vec::with_capacity(4),
             conn_rx,
-            bh_tx: channel::unbounded().0,
+            bh_tx: crossbeam_channel::unbounded().0,
         }.run();
     }
 
@@ -501,7 +502,7 @@ impl Forwarder {
                 info!("TCP: added backroute to forwarder");
             }
             // start TCP forwarding
-            let (conn_tx, conn_rx) = channel::unbounded();
+            let (conn_tx, conn_rx) = crossbeam_channel::unbounded();
             self.run_tcp_listener(conn_tx)?;
             self.run_tcp_distributor(conn_rx);
         }

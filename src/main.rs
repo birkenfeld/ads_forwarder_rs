@@ -20,17 +20,8 @@
 //
 // *****************************************************************************
 
-#[macro_use]
-extern crate log;
-extern crate mlzlog;
-extern crate mlzutil;
-extern crate byteorder;
-extern crate structopt;
-extern crate itertools;
-extern crate signalbool;
-extern crate crossbeam_channel as channel;
-
 use std::{net, process};
+use log::{debug, info, error};
 use structopt::StructOpt;
 
 mod scanner;
