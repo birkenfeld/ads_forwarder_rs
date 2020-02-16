@@ -1,3 +1,14 @@
+ads-forwarder (1.0.12) unstable; urgency=low
+
+  [ Georg Brandl ]
+  * fix cargo version
+  * fix UDP forwarding replies
+  * Makefile: add release targets
+
+  [ Jenkins ]
+
+ -- Jenkins <jenkins@debuild.taco.frm2>  Sun, 16 Feb 2020 11:40:50 +0100
+
 ads-forwarder (1.0.11) unstable; urgency=low
 
   [ Georg Brandl ]
