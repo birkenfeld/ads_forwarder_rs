@@ -420,14 +420,15 @@ impl Forwarder {
         let dump = self.opts.verbosity >= 2;
         spawn(name, move || {
             mlzlog::set_thread_prefix(format!("{}: ", name));
-            let mut active_client = "0.0.0.0".parse().unwrap();
+            let mut active_client = ("0.0.0.0".parse().unwrap(), 0);
             let mut buf = [0; 3072];
             loop {
                 if let Ok((len, addr)) = sock.recv_from(&mut buf) {
                     if addr.ip() != bh_ip {
-                        if addr.ip() != active_client {
+                        let client = (addr.ip(), addr.port());
+                        if client != active_client {
                             info!("active client is now {}", addr);
-                            active_client = addr.ip();
+                            active_client = client;
                         }
                         info!("{} bytes client -> Beckhoff", len);
                         if dump {
@@ -441,7 +442,7 @@ impl Forwarder {
                         if dump {
                             hexdump(&buf[..len]);
                         }
-                        if let Err(e) = sock.send_to(&buf[..len], (active_client, port)) {
+                        if let Err(e) = sock.send_to(&buf[..len], active_client) {
                             warn!("error forwarding request to client: {}", e);
                         }
                     }
