@@ -57,7 +57,12 @@ pub struct Options {
 
 fn main() {
     let mut opts = Options::from_args();
-    mlzlog::init(None::<&str>, "ads_forwarder", false, opts.verbosity >= 1, true).unwrap();
+    mlzlog::init(None::<&str>, "ads_forwarder",
+                 mlzlog::Settings {
+                     show_appname: false,
+                     debug: opts.verbosity >= 1,
+                     ..Default::default()
+                 }).unwrap();
 
     let what = opts.arg.take().unwrap_or_default();
     let scanner = Scanner::new(opts.verbosity >= 2);
