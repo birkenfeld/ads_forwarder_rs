@@ -1,3 +1,10 @@
+ads-forwarder (1.0.13) bionic; urgency=medium
+
+  * dependency update
+  * dependency update
+
+ -- Georg Brandl <jenkins@jenkinsng.admin.frm2.tum.de>  Tue, 15 Sep 2020 20:04:16 +0200
+
 ads-forwarder (1.0.12) unstable; urgency=low
 
   [ Georg Brandl ]
