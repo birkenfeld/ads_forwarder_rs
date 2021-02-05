@@ -1,3 +1,11 @@
+ads-forwarder (1.0.14) bionic; urgency=medium
+
+  * update dependencies for rust 1.41.1
+  * update dependencies
+  * do not mangle beckhoff-side net-id
+
+ -- Georg Brandl <jenkins@jenkinsng.admin.frm2.tum.de>  Fri, 05 Feb 2021 10:00:52 +0100
+
 ads-forwarder (1.0.13) bionic; urgency=medium
 
   * dependency update
