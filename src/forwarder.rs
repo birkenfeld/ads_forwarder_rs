@@ -138,7 +138,6 @@ struct ClientConn {
     chan: Receiver<ReadEvent>, // channel to receive messages (or quit)
     peer: SocketAddr, // peer address for convenience
     client_id: AmsNetId, // client's real ID
-    clients_bh_id: AmsNetId, // client thinks this is Beckhoff's ID
     virtual_id: AmsNetId, // virtual ID for the temporary route
 }
 
@@ -345,14 +344,12 @@ impl Distributor {
         let virtual_id = AmsNetId([10, 1, 0, id, 1, 1]);
         info!("assigned virtual NetID {}", virtual_id);
         self.clients.push(ClientConn { sock, peer, virtual_id, chan: cl_rx,
-                                       client_id: Default::default(),
-                                       clients_bh_id: Default::default() });
+                                       client_id: Default::default() });
         Ok(())
     }
 
     /// Handles a message coming from the Beckhoff intended for the given client.
     fn new_beckhoff_msg(&self, mut reply: AdsMessage, client: &ClientConn) {
-        reply.patch_source_id(&client.clients_bh_id);
         reply.patch_dest_id(&client.client_id);
         debug!("{} bytes Beckhoff -> client ({})",
                reply.length(), reply.dest_id());
@@ -378,7 +375,6 @@ impl Distributor {
             info!("client {} has NetID {}",
                   client.peer, request.source_id());
             client.client_id = request.source_id();
-            client.clients_bh_id = request.dest_id();
 
             if let Err(e) = self.bh.add_route(&client.virtual_id, "fwdclient") {
                 error!("error setting up client route: {}", e);
@@ -386,7 +382,6 @@ impl Distributor {
                 info!("added client route successfully");
             }
         }
-        request.patch_dest_id(&self.bh.netid);
         request.patch_source_id(&client.virtual_id);
         debug!("{} bytes client ({}) -> Beckhoff",
                request.length(), request.source_id());
