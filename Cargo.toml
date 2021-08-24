@@ -20,3 +20,4 @@ anyhow = "1.0.20"
 log = "0.4.6"
 signalbool = "0.2.3"
 dns-lookup = "=1.0.5"  # for 1.41.1 compat
+bitflags = "=1.2.1"    # for 1.41.1 compat
