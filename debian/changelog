@@ -32,7 +32,7 @@ ads-forwarder (1.0.12) unstable; urgency=low
 
   [ Jenkins ]
 
- -- Jenkins <jenkins@debuild.taco.frm2>  Sun, 16 Feb 2020 11:40:50 +0100
+ -- Jenkins <jenkins@debuild.taco.frm2.tum.de>  Sun, 16 Feb 2020 11:40:50 +0100
 
 ads-forwarder (1.0.11) unstable; urgency=low
 
@@ -48,7 +48,7 @@ ads-forwarder (1.0.11) unstable; urgency=low
 
   [ Jenkins ]
 
- -- Jenkins <jenkins@debuild.taco.frm2>  Tue, 04 Feb 2020 09:06:12 +0100
+ -- Jenkins <jenkins@debuild.taco.frm2.tum.de>  Tue, 04 Feb 2020 09:06:12 +0100
 
 ads-forwarder (1.0.9) unstable; urgency=low
 
@@ -57,7 +57,7 @@ ads-forwarder (1.0.9) unstable; urgency=low
 
   [ Jenkins ]
 
- -- Jenkins <jenkins@debuild.taco.frm2>  Mon, 05 Aug 2019 08:43:51 +0200
+ -- Jenkins <jenkins@debuild.taco.frm2.tum.de>  Mon, 05 Aug 2019 08:43:51 +0200
 
 ads-forwarder (1.0.8) unstable; urgency=low
 
@@ -67,7 +67,7 @@ ads-forwarder (1.0.8) unstable; urgency=low
 
   [ Jenkins ]
 
- -- Jenkins <jenkins@debuild.taco.frm2>  Mon, 05 Aug 2019 08:22:38 +0200
+ -- Jenkins <jenkins@debuild.taco.frm2.tum.de>  Mon, 05 Aug 2019 08:22:38 +0200
 
 ads-forwarder (1.0.6) unstable; urgency=medium
 
@@ -118,4 +118,4 @@ ads-forwarder (1.0.6) unstable; urgency=medium
   * handle stray back-connections from some Beckhoffs
   * Add makefile for boxes.
 
- -- Georg Brandl <gbrandl@jcnsopc78.jcns.frm2>  Sat, 27 Jul 2019 08:09:54 +0200
+ -- Georg Brandl <gbrandl@jcnsopc78.jcns.frm2.tum.de>  Sat, 27 Jul 2019 08:09:54 +0200
