@@ -3,7 +3,8 @@
 PREFIX = /usr
 
 build:
-	cargo build --release
+	# workaround for buster
+	CARGO_NET_GIT_FETCH_WITH_CLI=true cargo build --release
 
 install: build
 	install -m 755 -D target/release/ads_forwarder_rs $(DESTDIR)$(PREFIX)/bin/ads_forwarder
