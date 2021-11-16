@@ -186,6 +186,7 @@ impl Distributor {
         // connect to Beckhoff
         let bh_sock = TcpStream::connect((self.bh.bh_addr, BECKHOFF_TCP_PORT))
             .context("connecting to Beckhoff")?;
+        bh_sock.set_nodelay(true)?;
         info!("connected to Beckhoff at {}", bh_sock.peer_addr()?);
         let (bh_tx, bh_rx) = crossbeam_channel::unbounded();
 
@@ -481,7 +482,9 @@ impl Forwarder {
             // main loop: send new client sockets to distributor
             for conn in srv_sock.incoming() {
                 if let Ok(conn) = conn {
-                    let _ = conn_tx.send(conn);
+                    if let Ok(_) = conn.set_nodelay(true) {
+                        let _ = conn_tx.send(conn);
+                    }
                 }
             }
         });
