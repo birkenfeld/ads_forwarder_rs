@@ -24,6 +24,8 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
+
+use ads::{AmsAddr, AmsNetId, udp};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, warn, error};
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
@@ -33,9 +35,8 @@ use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
 
 use crate::Options;
-use crate::util::{AdsMessage, AmsNetId, UdpMessage, BECKHOFF_UDP_PORT,
-                  BECKHOFF_BC_UDP_PORT, BECKHOFF_TCP_PORT, FWDER_NETID,
-                  DUMMY_NETID};
+use crate::util::{AdsMessage, BECKHOFF_UDP_PORT, BECKHOFF_BC_UDP_PORT,
+                  BECKHOFF_TCP_PORT, FWDER_NETID, DUMMY_NETID};
 
 
 #[derive(Clone, PartialEq)]
@@ -55,7 +56,7 @@ pub struct Beckhoff {
 
 impl Beckhoff {
     /// Add a route on the Beckhoff, to `netid` via our interface address.
-    fn add_route(&self, netid: &AmsNetId, name: &str) -> Result<()> {
+    fn add_route(&self, netid: AmsNetId, name: &str) -> Result<()> {
         if self.typ == BhType::BC {
             // no routes necessary on BCs
             return Ok(());
@@ -65,25 +66,25 @@ impl Beckhoff {
         sock.set_read_timeout(Some(Duration::from_millis(1500)))?;
 
         for password in &["", "1"] {
-            let mut msg = UdpMessage::new(UdpMessage::ADD_ROUTE, netid, 10000);
-            msg.add_str(UdpMessage::ROUTENAME, name);
-            msg.add_bytes(UdpMessage::NETID, &netid.0);
-            msg.add_str(UdpMessage::USERNAME, "Administrator");
-            msg.add_str(UdpMessage::PASSWORD, password);
-            msg.add_str(UdpMessage::HOST, &format!("{}", self.if_addr));
+            let mut msg = udp::Message::new(udp::ServiceId::AddRoute, AmsAddr::new(netid, 10000));
+            msg.add_str(udp::Tag::RouteName, name);
+            msg.add_bytes(udp::Tag::NetID, &netid.0);
+            msg.add_str(udp::Tag::UserName, "Administrator");
+            msg.add_str(udp::Tag::Password, password);
+            msg.add_str(udp::Tag::ComputerName, &format!("{}", self.if_addr));
             if self.typ == BhType::CX3 {
                 // mark as temporary route (seems to crash CXs with TC2)
-                msg.add_u32(UdpMessage::OPTIONS, 1);
+                msg.add_u32(udp::Tag::Options, 1);
             }
-            sock.send_to(&msg.into_bytes(), (self.bh_addr, BECKHOFF_UDP_PORT))?;
+            sock.send_to(msg.as_bytes(), (self.bh_addr, BECKHOFF_UDP_PORT))?;
 
             let mut reply = [0; 2048];
             let (len, _) = sock.recv_from(&mut reply).context("getting route reply")?;
-            let msg = UdpMessage::parse(&reply[..len], UdpMessage::ADD_ROUTE)
+            let msg = udp::Message::parse(&reply[..len], udp::ServiceId::AddRoute, true)
                 .context("parsing route reply")?;
-            match msg.get_u32(UdpMessage::STATUS) {
+            match msg.get_u32(udp::Tag::Status) {
                 Some(0) => return Ok(()),
-                Some(0x0704) => continue,
+                Some(0x0704) => continue,  // password not accepted
                 Some(e) => bail!("error return when adding route: {:#x}", e),
                 None => bail!("invalid return message adding route"),
             }
@@ -103,7 +104,7 @@ impl Beckhoff {
         data.write_u32::<LE>(name.len() as u32 + 1).unwrap(); // Data-len
         data.write_all(name.as_bytes()).unwrap();
         data.write_all(&[0]).unwrap();
-        let msg = AdsMessage::new(&self.netid, 10000, &FWDER_NETID, 40001,
+        let msg = AdsMessage::new(self.netid, 10000, FWDER_NETID, 40001,
                                   AdsMessage::WRITE, &data);
         sock.write_all(&msg.0).context("removing routes")?;
 
@@ -211,7 +212,7 @@ impl Distributor {
     /// NetID is set to a known dummy value.
     fn run_keepalive(&self, sock: &TcpStream) -> Result<()> {
         let mut bh_sock = sock.try_clone()?;
-        let msg = AdsMessage::new(&self.bh.netid, 10000, &DUMMY_NETID, 40001,
+        let msg = AdsMessage::new(self.bh.netid, 10000, DUMMY_NETID, 40001,
                                   AdsMessage::DEVINFO, &[]);
 
         spawn("keepalive", move || loop {
@@ -354,9 +355,9 @@ impl Distributor {
     /// Handles a message coming from the Beckhoff intended for the given client.
     fn new_beckhoff_msg(&self, mut reply: AdsMessage, client: &ClientConn) {
         if self.bh.typ == BhType::BC {
-            reply.patch_source_id(&client.clients_bh_id);
+            reply.patch_source_id(client.clients_bh_id);
         }
-        reply.patch_dest_id(&client.client_id);
+        reply.patch_dest_id(client.client_id);
         debug!("{} bytes Beckhoff -> client ({})",
                reply.length(), reply.dest_id());
         if self.dump {
@@ -383,16 +384,16 @@ impl Distributor {
             client.client_id = request.source_id();
             client.clients_bh_id = request.dest_id();
 
-            if let Err(e) = self.bh.add_route(&client.virtual_id, "fwdclient") {
+            if let Err(e) = self.bh.add_route(client.virtual_id, "fwdclient") {
                 error!("error setting up client route: {}", e);
             } else {
                 info!("added client route successfully");
             }
         }
         if self.bh.typ == BhType::BC {
-            request.patch_dest_id(&self.bh.netid);
+            request.patch_dest_id(self.bh.netid);
         }
-        request.patch_source_id(&client.virtual_id);
+        request.patch_source_id(client.virtual_id);
         debug!("{} bytes client ({}) -> Beckhoff",
                request.length(), request.source_id());
         if self.dump {
@@ -504,7 +505,7 @@ impl Forwarder {
         } else {
             // add route to ourselves - without it, TCP connections are
             // closed immediately
-            if let Err(e) = self.bh.add_route(&FWDER_NETID, "forwarder") {
+            if let Err(e) = self.bh.add_route(FWDER_NETID, "forwarder") {
                 bail!("TCP: while adding backroute: {}", e);
             } else {
                 info!("TCP: added backroute to forwarder");

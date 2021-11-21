@@ -75,7 +75,7 @@ fn main() {
     } else if let Ok(addr) = what.parse::<net::Ipv4Addr>() {
         debug!("scanning IP address {}", addr);
         scanner.scan(Scan::Address(addr))
-    } else if let Ok(netid) = what.parse::<util::AmsNetId>() {
+    } else if let Ok(netid) = what.parse::<ads::AmsNetId>() {
         debug!("scanning for AMS NetId {}", netid);
         scanner.scan(Scan::NetId(netid))
     } else if let Some(addr) = mlzutil::net::lookup_ipv4(&what) {

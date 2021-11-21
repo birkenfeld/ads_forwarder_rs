@@ -23,13 +23,15 @@
 use std::collections::HashMap;
 use std::net::{UdpSocket, TcpStream, Ipv4Addr};
 use std::time::Duration;
+
+use ads::{AmsAddr, AmsNetId, udp};
 use anyhow::{anyhow, Context, Result};
 use log::{debug, info, error};
 use mlzutil::{self, bytes::hexdump};
 
 use crate::forwarder::{Beckhoff, BhType};
-use crate::util::{AmsNetId, FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
-                  BECKHOFF_TCP_PORT, UdpMessage};
+use crate::util::{FWDER_NETID, BECKHOFF_BC_UDP_PORT, BECKHOFF_UDP_PORT,
+                  BECKHOFF_TCP_PORT};
 
 
 /// Determines what to scan.
@@ -119,12 +121,12 @@ impl Scanner {
         }
 
         // scan for CXs: "identify" operation in the UDP protocol
-        let cx_msg = UdpMessage::new(UdpMessage::IDENTIFY, &FWDER_NETID, 10000).into_bytes();
-        udp.send_to(&cx_msg, (send_addr, BECKHOFF_UDP_PORT))
+        let cx_msg = udp::Message::new(udp::ServiceId::Identify, AmsAddr::new(FWDER_NETID, 10000));
+        udp.send_to(cx_msg.as_bytes(), (send_addr, BECKHOFF_UDP_PORT))
             .context("sending CX scan broadcast")?;
         debug!("scan: sending CX UDP packet");
         if self.dump {
-            hexdump(&cx_msg);
+            hexdump(cx_msg.as_bytes());
         }
 
         // wait for replies
@@ -139,7 +141,7 @@ impl Scanner {
             let bh_addr = mlzutil::net::unwrap_ipv4(reply_addr.ip());
             if reply_addr.port() == BECKHOFF_BC_UDP_PORT {
                 if reply.len() == 42 && reply[0..4] == [1, 0, 0, 0x80] {
-                    let netid = AmsNetId::from_slice(&reply[10..16]);
+                    let netid = AmsNetId::from_slice(&reply[10..16]).unwrap();
                     let name = &reply[22..32];
                     let name = String::from_utf8_lossy(
                         &name[..name.iter().position(|&ch| ch == 0).unwrap_or(10)]);
@@ -147,15 +149,15 @@ impl Scanner {
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               typ: BhType::BC, bh_addr, netid });
                 }
-            } else if let Ok(msg) = UdpMessage::parse(reply, UdpMessage::IDENTIFY) {
-                let name = msg.get_str(UdpMessage::HOST).unwrap_or("<???>");
-                let ver = msg.get_bytes(UdpMessage::VERSION).ok_or(anyhow!("no version info"))?;
+            } else if let Ok(msg) = udp::Message::parse(reply, udp::ServiceId::Identify, true) {
+                let name = msg.get_str(udp::Tag::ComputerName).unwrap_or("<???>");
+                let ver = msg.get_bytes(udp::Tag::TCVersion).ok_or(anyhow!("no version info"))?;
                 info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
-                      msg.srcid, bh_addr);
+                      msg.get_source(), bh_addr);
                 beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                           typ: if ver[0] == 2 { BhType::CX2 } else { BhType::CX3 },
-                                          bh_addr, netid: msg.srcid });
+                                          bh_addr, netid: msg.get_source().netid() });
             }
             // if scanning a single address, don't wait for more replies
             if single_reply {
