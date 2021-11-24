@@ -43,14 +43,12 @@ pub struct Options {
     forward: bool,
     #[structopt(short="U", long="udp-only", help="Forward only UDP")]
     udponly: bool,
-    #[structopt(short="S", long="scan-bc", help="Ignored for compatibility")]
-    _ignore1: bool,
-    #[structopt(short="A", long="scan-netid", help="Ignored for compatibility")]
-    _ignore2: bool,
-    #[structopt(short="M", long="mangle", help="Ignored for compatibility")]
-    _ignore3: bool,
-    #[structopt(short="v", long="verbose", help="Increase verbosity", parse(from_occurrences))]
-    verbosity: u8,
+    #[structopt(short="s", long="summarize", help="Summarize TCP packets")]
+    summarize: bool,
+    #[structopt(short="d", long="dump", help="Hexdump TCP and UDP packets")]
+    dump: bool,
+    #[structopt(short="v", long="verbose", help="Show debug log messages")]
+    verbose: bool,
     #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     arg: Option<String>,
 }
@@ -60,12 +58,12 @@ fn main() {
     mlzlog::init(None::<&str>, "ads_forwarder",
                  mlzlog::Settings {
                      show_appname: false,
-                     debug: opts.verbosity >= 1,
+                     debug: opts.verbose,
                      ..Default::default()
                  }).unwrap();
 
     let what = opts.arg.take().unwrap_or_default();
-    let scanner = Scanner::new(opts.verbosity >= 2);
+    let scanner = Scanner::new(opts.dump);
 
     // check out what argument was given (interface, IP address, NetID),
     // and scan for Beckhoffs an their NetIDs

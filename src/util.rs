@@ -82,4 +82,66 @@ impl AdsMessage {
     pub fn patch_source_id(&mut self, id: AmsNetId) {
         self.0[14..20].copy_from_slice(&id.0);
     }
+
+    /// Print a summary of the request/response to stdout.
+    pub fn summarize(&self) {
+        let cmd = LE::read_u16(&self.0[22..]);
+
+        if cmd == 8 {
+            // ignore notifications
+            return;
+        }
+
+        let dport = LE::read_u16(&self.0[12..]);
+        let stf = LE::read_u16(&self.0[24..]);
+        let mut err = LE::read_u32(&self.0[30..]);
+        let inv = LE::read_u32(&self.0[34..]);
+
+        let cmdname = match cmd {
+            1 => "DevInfo",
+            2 => "Read ",
+            3 => "Write",
+            4 => "GetState",
+            5 => "WriteControl",
+            6 => "AddNotif",
+            7 => "DelNotif",
+            8 => "Notification",
+            9 => "ReadWrite",
+            _ => "???",
+        };
+        let reply = stf & 1 != 0;
+        
+        let prefix = format!("{}[{}]{} {:5} {}",
+                             if reply { "<-" } else { "--" },
+                             inv, if reply { "--" } else { "->" },
+                             dport, cmdname);
+        if !reply {
+            match cmd {
+                2 | 3 | 6 => if self.0.len() >= 50 {
+                    let igrp = LE::read_u32(&self.0[38..]);
+                    let ioff = LE::read_u32(&self.0[42..]);
+                    let len  = LE::read_u32(&self.0[46..]);
+                    println!("{}: {:#x}:{:#x} {} bytes", prefix, igrp, ioff, len);
+                }
+                9 => if self.0.len() >= 54 {
+                    let igrp = LE::read_u32(&self.0[38..]);
+                    let ioff = LE::read_u32(&self.0[42..]);
+                    let rlen = LE::read_u32(&self.0[46..]);
+                    let wlen = LE::read_u32(&self.0[50..]);
+                    println!("{}: {:#x}:{:#x} {}/{} bytes", prefix, igrp, ioff, rlen, wlen);
+                }
+                _ => println!("{}", prefix)
+            }
+        } else {
+            if err == 0 && self.0.len() >= 42 && LE::read_u32(&self.0[38..]) != 0 {
+                err = LE::read_u32(&self.0[38..]);
+            }
+            if err != 0 {
+                let msg: ads::Result<()> = ads::errors::ads_error("ERROR", err);
+                println!("{}: {}\n", prefix, msg.unwrap_err());
+            } else {
+                // println!("{}: no error\n", prefix);
+            }
+        }
+    }
 }

@@ -127,6 +127,7 @@ struct Distributor {
     bh: Beckhoff,
     ids: Vec<u8>,
     dump: bool,
+    summarize: bool,
     sig: SignalBool,
     clients: Vec<ClientConn>,
     conn_rx: Receiver<TcpStream>,
@@ -360,6 +361,9 @@ impl Distributor {
         reply.patch_dest_id(client.client_id);
         debug!("{} bytes Beckhoff -> client ({})",
                reply.length(), reply.dest_id());
+        if self.summarize {
+            reply.summarize();
+        }
         if self.dump {
             hexdump(&reply.0);
         }
@@ -396,6 +400,9 @@ impl Distributor {
         request.patch_source_id(client.virtual_id);
         debug!("{} bytes client ({}) -> Beckhoff",
                request.length(), request.source_id());
+        if self.summarize {
+            request.summarize();
+        }
         if self.dump {
             hexdump(&request.0);
         }
@@ -423,7 +430,7 @@ impl Forwarder {
         info!("{}: bound to {}", name, sock.local_addr()?);
 
         let bh_ip = self.bh.bh_addr;
-        let dump = self.opts.verbosity >= 2;
+        let dump = self.opts.dump;
         spawn(name, move || {
             mlzlog::set_thread_prefix(format!("{}: ", name));
             let mut active_client = ("0.0.0.0".parse().unwrap(), 0);
@@ -463,7 +470,8 @@ impl Forwarder {
         Distributor {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
-            dump: self.opts.verbosity >= 2,
+            dump: self.opts.dump,
+            summarize: self.opts.summarize,
             sig: SignalBool::new(&[Signal::SIGINT, Signal::SIGTERM],
                                  Flag::Restart).unwrap(),
             clients: Vec::with_capacity(4),
