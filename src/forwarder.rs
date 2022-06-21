@@ -362,9 +362,10 @@ impl Distributor {
         debug!("{} bytes Beckhoff -> client ({})",
                reply.length(), reply.dest_id());
         if self.summarize {
-            reply.summarize();
-        }
-        if self.dump {
+            if reply.summarize() && self.dump {
+                hexdump(&reply.0);
+            }
+        } else if self.dump {
             hexdump(&reply.0);
         }
         if reply.0.len() == 0xae && reply.0[0x6e..0x74] == client.virtual_id.0 {
@@ -401,9 +402,10 @@ impl Distributor {
         debug!("{} bytes client ({}) -> Beckhoff",
                request.length(), request.source_id());
         if self.summarize {
-            request.summarize();
-        }
-        if self.dump {
+            if request.summarize() && self.dump {
+                hexdump(&request.0);
+            }
+        } else if self.dump {
             hexdump(&request.0);
         }
         // if the socket is closed, the next read attempt will return Quit

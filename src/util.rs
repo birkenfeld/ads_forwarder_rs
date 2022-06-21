@@ -84,12 +84,12 @@ impl AdsMessage {
     }
 
     /// Print a summary of the request/response to stdout.
-    pub fn summarize(&self) {
+    pub fn summarize(&self) -> bool {
         let cmd = LE::read_u16(&self.0[22..]);
 
         if cmd == 8 {
             // ignore notifications
-            return;
+            return false;
         }
 
         let dport = LE::read_u16(&self.0[12..]);
@@ -143,5 +143,7 @@ impl AdsMessage {
                 // println!("{}: no error\n", prefix);
             }
         }
+
+        true  // also dump if wanted
     }
 }
