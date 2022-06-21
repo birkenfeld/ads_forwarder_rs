@@ -1,3 +1,13 @@
+ads-forwarder (1.2.0) focal; urgency=medium
+
+  * Use the ads crate.
+  * Add an option to summarize communications.
+  * dependency update (MSRV 1.48)
+  * also dump summarized packets if wanted
+  * add explicit Rust toolchain file
+
+ -- Georg Brandl <jenkins@frm2.tum.de>  Tue, 21 Jun 2022 13:51:30 +0200
+
 ads-forwarder (1.1.0) focal; urgency=medium
 
   * dependency updates
