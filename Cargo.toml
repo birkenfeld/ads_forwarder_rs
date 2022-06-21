@@ -10,7 +10,7 @@ name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-ads = "0.1"
+ads = "0.4"
 crossbeam-channel = "0.5.1"
 byteorder = "1.4.3"
 structopt = "0.3.25"
@@ -19,5 +19,3 @@ mlzlog = "0.7.0"
 anyhow = "1.0.20"
 log = "0.4.6"
 signalbool = "0.2.3"
-dns-lookup = "=1.0.5"  # for 1.41.1 compat
-bitflags = "=1.2.1"    # for 1.41.1 compat
