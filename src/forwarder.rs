@@ -22,6 +22,8 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr, Ipv4Addr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread;
 
@@ -30,7 +32,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, warn, error};
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
 use crossbeam_channel::{self, Receiver, Sender, Select};
-use signalbool::{Flag, Signal, SignalBool};
 use mlzutil::{spawn, bytes::hexdump};
 use mlzlog;
 
@@ -128,7 +129,7 @@ struct Distributor {
     ids: Vec<u8>,
     dump: bool,
     summarize: bool,
-    sig: SignalBool,
+    sig: Arc<AtomicBool>,
     clients: Vec<ClientConn>,
     conn_rx: Receiver<TcpStream>,
     bh_tx: Sender<ReadEvent>,
@@ -233,7 +234,7 @@ impl Distributor {
     /// is closed, it is tried to reopen every second.
     fn run(mut self) {
         mlzlog::set_thread_prefix("TCP: ");
-        while !self.sig.caught() {
+        while !self.sig.load(Ordering::Relaxed) {
             self.clients.clear();
             match self.connect() {
                 Ok((bh_sock, bh_chan)) => self.handle(bh_sock, bh_chan),
@@ -280,7 +281,7 @@ impl Distributor {
     fn handle(&mut self, mut bh_sock: TcpStream, bh_chan: Receiver<ReadEvent>) {
         'select: loop {
             // check for interrupt signal
-            if self.sig.caught() {
+            if self.sig.load(Ordering::Relaxed) {
                 info!("exiting, removing routes...");
                 if let Err(e) = self.bh.remove_routes(&mut bh_sock, "forwarder") {
                     warn!("could not remove forwarder route: {:#}", e);
@@ -469,13 +470,18 @@ impl Forwarder {
 
     /// Run the TCP distributor, receiving new client connections on the given channel.
     fn run_tcp_distributor(&mut self, conn_rx: Receiver<TcpStream>) {
+        let atomic = Arc::new(AtomicBool::new(false));
+        signal_hook::flag::register(signal_hook::consts::SIGINT, atomic.clone())
+            .expect("register signal");
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, atomic.clone())
+            .expect("register signal");
+
         Distributor {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
             dump: self.opts.dump,
             summarize: self.opts.summarize,
-            sig: SignalBool::new(&[Signal::SIGINT, Signal::SIGTERM],
-                                 Flag::Restart).unwrap(),
+            sig: atomic,
             clients: Vec::with_capacity(4),
             conn_rx,
             bh_tx: crossbeam_channel::unbounded().0,
