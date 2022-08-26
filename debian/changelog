@@ -1,3 +1,10 @@
+ads-forwarder (1.2.1) focal; urgency=medium
+
+  * switch signal-hook crate
+  * update dependencies
+
+ -- Georg Brandl <jenkins@jenkins02.admin.frm2.tum.de>  Fri, 26 Aug 2022 09:27:00 +0200
+
 ads-forwarder (1.2.0) focal; urgency=medium
 
   * Use the ads crate.
