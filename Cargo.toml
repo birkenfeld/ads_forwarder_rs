@@ -19,3 +19,5 @@ mlzlog = "0.7.0"
 anyhow = "1.0.20"
 log = "0.4.6"
 signal-hook = "0.3.14"
+# Rust 1.48
+systemstat = "<0.1.12"
