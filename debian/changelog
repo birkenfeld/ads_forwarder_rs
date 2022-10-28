@@ -1,3 +1,9 @@
+ads-forwarder (1.2.2) focal; urgency=medium
+
+  * Add option -p print ads headers
+
+ -- Torsten Bögershausen <jenkins@frm2.tum.de>  Fri, 28 Oct 2022 14:28:56 +0200
+
 ads-forwarder (1.2.1) focal; urgency=medium
 
   * switch signal-hook crate
