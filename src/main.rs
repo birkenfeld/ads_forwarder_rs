@@ -43,6 +43,8 @@ pub struct Options {
     forward: bool,
     #[structopt(short="U", long="udp-only", help="Forward only UDP")]
     udponly: bool,
+    #[structopt(short="p", long="print", help="Print ADS headers")]
+    print_ads_headers: bool,
     #[structopt(short="s", long="summarize", help="Summarize TCP packets")]
     summarize: bool,
     #[structopt(short="d", long="dump", help="Hexdump TCP and UDP packets")]

@@ -129,6 +129,7 @@ struct Distributor {
     ids: Vec<u8>,
     dump: bool,
     summarize: bool,
+    print_ads_headers: bool,
     sig: Arc<AtomicBool>,
     clients: Vec<ClientConn>,
     conn_rx: Receiver<TcpStream>,
@@ -362,7 +363,14 @@ impl Distributor {
         reply.patch_dest_id(client.client_id);
         debug!("{} bytes Beckhoff -> client ({})",
                reply.length(), reply.dest_id());
-        if self.summarize {
+        if self.print_ads_headers {
+            let ads_message = &reply;
+            info!("new_beckhoff_msg length={} dest_id={} source_id={}",
+                  ads_message.length(),
+                  ads_message.dest_id(),
+                  ads_message.source_id());
+         }
+         if self.summarize {
             if reply.summarize() && self.dump {
                 hexdump(&reply.0);
             }
@@ -382,6 +390,13 @@ impl Distributor {
 
     /// Handles a message coming from the given client.
     fn new_client_msg(&mut self, mut request: AdsMessage, client: usize, bh_sock: &mut TcpStream) {
+        if self.print_ads_headers {
+            let ads_message = &request;
+            info!("new_client_msg orig request length={} dest_id={} source_id={}",
+                  ads_message.length(),
+                  ads_message.dest_id(),
+                  ads_message.source_id());
+        }
         // first request: remember NetIDs of the requests
         let client = &mut self.clients[client];
         if client.client_id.is_zero() {
@@ -402,6 +417,13 @@ impl Distributor {
         request.patch_source_id(client.virtual_id);
         debug!("{} bytes client ({}) -> Beckhoff",
                request.length(), request.source_id());
+        if self.print_ads_headers {
+            let ads_message = &request;
+            info!("new_client_msg patched request length={} dest_id={} source_id={}",
+                  ads_message.length(),
+                  ads_message.dest_id(),
+                  ads_message.source_id());
+        }
         if self.summarize {
             if request.summarize() && self.dump {
                 hexdump(&request.0);
@@ -481,6 +503,7 @@ impl Forwarder {
             ids: (1..255).rev().collect(),
             dump: self.opts.dump,
             summarize: self.opts.summarize,
+            print_ads_headers: self.opts.print_ads_headers,
             sig: atomic,
             clients: Vec::with_capacity(4),
             conn_rx,
