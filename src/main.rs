@@ -30,12 +30,6 @@ mod util;
 
 use crate::scanner::{Scan, Scanner};
 
-// Use the system allocator instead of jemalloc.
-// This allows us to build with the i586 target on Debian 7.
-use std::alloc::System;
-#[global_allocator]
-static ALLOCATOR: System = System;
-
 /// A forwarder for Beckhoff ADS and UDP connections.
 #[derive(StructOpt)]
 pub struct Options {

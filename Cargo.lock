@@ -15,7 +15,7 @@ dependencies = [
 
 [[package]]
 name = "ads_forwarder_rs"
-version = "1.2.0"
+version = "1.2.2"
 dependencies = [
  "ads",
  "anyhow",
