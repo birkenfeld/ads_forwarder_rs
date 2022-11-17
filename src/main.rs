@@ -46,7 +46,7 @@ pub struct Options {
     #[structopt(short="v", long="verbose", help="Show debug log messages")]
     verbose: bool,
     #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
-    arg: Option<String>,
+    target: Option<String>,
 }
 
 fn main() {
@@ -58,7 +58,7 @@ fn main() {
                      ..Default::default()
                  }).unwrap();
 
-    let what = opts.arg.take().unwrap_or_default();
+    let what = opts.target.take().unwrap_or_default();
     let scanner = Scanner::new(opts.dump);
 
     // check out what argument was given (interface, IP address, NetID),
