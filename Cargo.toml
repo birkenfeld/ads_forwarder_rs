@@ -10,7 +10,8 @@ name = "ads_forwarder_rs"
 path = "src/main.rs"
 
 [dependencies]
-ads = "0.4"
+ads = "0.4.3"
+atty = "0.2.14"
 crossbeam-channel = "0.5.1"
 byteorder = "1.4.3"
 structopt = "0.3.25"

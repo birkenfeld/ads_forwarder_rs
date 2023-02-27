@@ -2,9 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "ads"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaec747a302fbccfe03b4a0a6e6e235c81fcc91d5dc843d5d11dced9db0aa81c"
+checksum = "04e327d4de426539e1f33f72e09c6aa61ef3aee6278f9a5fed0451752ba3c9f8"
 dependencies = [
  "byteorder",
  "crossbeam-channel",
@@ -19,6 +19,7 @@ version = "1.2.2"
 dependencies = [
  "ads",
  "anyhow",
+ "atty",
  "byteorder",
  "crossbeam-channel",
  "log",

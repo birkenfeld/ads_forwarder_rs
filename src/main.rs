@@ -23,12 +23,16 @@
 use std::{net, process};
 use log::{debug, info, error};
 use structopt::StructOpt;
+use atty::Stream;
 
 mod scanner;
 mod forwarder;
 mod util;
 
+use ads::{AmsNetId};
 use crate::scanner::{Scan, Scanner};
+use crate::util::{FWDER_NETID};
+
 
 /// A forwarder for Beckhoff ADS and UDP connections.
 #[derive(StructOpt)]
@@ -41,19 +45,26 @@ pub struct Options {
     print_ads_headers: bool,
     #[structopt(short="s", long="summarize", help="Summarize TCP packets")]
     summarize: bool,
+    #[structopt(short="S", long="single-ams-net-id", help="Use only one AMS Net ID towards Beckhoff")]
+    single_ams_net_id: bool,
     #[structopt(short="d", long="dump", help="Hexdump TCP and UDP packets")]
     dump: bool,
     #[structopt(short="v", long="verbose", help="Show debug log messages")]
     verbose: bool,
+    #[structopt(short = "", long = "local-ams-net-id")]
+    local_ams_net_id: Option<AmsNetId>,
     #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     target: Option<String>,
 }
 
 fn main() {
+    //log::env_logger::init();
+    //log::init();
     let mut opts = Options::from_args();
     mlzlog::init(None::<&str>, "ads_forwarder",
                  mlzlog::Settings {
                      show_appname: false,
+                     stdout_color: atty::is(Stream::Stdout),
                      debug: opts.verbose,
                      ..Default::default()
                  }).unwrap();
@@ -89,7 +100,13 @@ fn main() {
             error!("did not find exactly one Beckhoff for forwarding, exiting");
             process::exit(1);
         }
-        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
+        let mut local_ams_net_id : AmsNetId = FWDER_NETID;
+        match opts.local_ams_net_id {
+            Some(ll) => { local_ams_net_id = ll },
+            None => {},
+        }
+        info!("main local_ams_net_id={}", local_ams_net_id);
+        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap(),local_ams_net_id).run() {
             error!("while running forwarder: {:#}", e);
         }
     } else {
