@@ -34,11 +34,11 @@ use log::{debug, info, warn, error};
 use byteorder::{ByteOrder, LittleEndian as LE, WriteBytesExt};
 use crossbeam_channel::{self, Receiver, Sender, Select};
 use mlzutil::{spawn, bytes::hexdump};
-use mlzlog;
 
 use crate::Options;
 use crate::util::{AdsMessage, InOutClientBH, BECKHOFF_UDP_PORT, BECKHOFF_BC_UDP_PORT,
-                  BECKHOFF_TCP_PORT, DUMMY_NETID};
+                  BECKHOFF_TCP_PORT, DUMMY_NETID, FWDER_NETID, GETSTATE, ADDNOTIF,
+                  DELNOTIF, NOTIF, WRITE, DEVINFO, NotifData};
 
 
 #[derive(Clone, PartialEq)]
@@ -92,7 +92,8 @@ impl Beckhoff {
     }
 
     /// Remove all routes on the Beckhoff with given name.
-    fn remove_routes(&self, sock: &mut TcpStream, netid: &AmsNetId, name: &str) -> Result<()> {
+    fn remove_routes(&self, sock: &mut TcpStream, netid: &AmsNetId,
+                     name: &str) -> Result<()> {
         if self.typ == BhType::BC {
             return Ok(());
         }
@@ -103,7 +104,7 @@ impl Beckhoff {
         data.write_all(name.as_bytes()).unwrap();
         data.write_all(&[0]).unwrap();
         let msg = AdsMessage::new(self.netid, 10000, *netid, 40001,
-                                  AdsMessage::WRITE, &data, false, 0);
+                                  WRITE, false, 0, &data);
         sock.write_all(&msg.0).context("removing routes")?;
 
         Ok(())
@@ -116,10 +117,9 @@ impl Beckhoff {
 pub struct Forwarder {
     opts: Options,
     bh: Beckhoff,
-    local_ams_net_id: AmsNetId,
 }
 
-struct ClientReqInvokeId {
+struct ClientRequest {
     index: usize,
     invoke_id: u32,
     add_notif_req_data: Option::<crate::util::AddNotifReqData>,
@@ -134,7 +134,6 @@ struct Distributor {
     ids: Vec<u8>,
     dump: bool,
     summarize: bool,
-    _print_ads_headers: bool,
     single_ams_net_id: bool,
     sig: Arc<AtomicBool>,
     clients: Vec<ClientConn>,
@@ -142,7 +141,7 @@ struct Distributor {
     /* As we patch the invoke ID before sending it to the Beckhoff with
        our own maintained invoke ID, we need to remember which client
        belongs to which invoke ID */
-    invoke_id_to_client_map: HashMap<u32, ClientReqInvokeId>,
+    invoke_id_to_client_map: HashMap<u32, ClientRequest>,
     /*
        Notifications: When different (or the same) clients asks for notifications,
        they are "shared", kind of. We only ask for one notification towards the PLC
@@ -152,7 +151,7 @@ struct Distributor {
      */
     notif_req_data_to_handle_map: HashMap<crate::util::AddNotifReqData, u32>,
     notif_handle_to_client_indices_map: HashMap<u32, Vec<usize>>,
-    notif_handle_to_last_notif_stream_map: HashMap<u32, Vec<u8>>,
+    notif_handle_to_last_notif_stream_map: HashMap<u32, NotifData>,
     //notification_req_client_map: HashMap<u32, crate::util::AddNotifReqData>,
     conn_rx: Receiver<TcpStream>,
     bh_tx: Sender<ReadEvent>,
@@ -241,7 +240,7 @@ impl Distributor {
     fn run_keepalive(&self, sock: &TcpStream) -> Result<()> {
         let mut bh_sock = sock.try_clone()?;
         let msg = AdsMessage::new(self.bh.netid, 10000, DUMMY_NETID, 40001,
-                                  AdsMessage::DEVINFO, &[], false, 0);
+                                  DEVINFO, false, 0, &[]);
 
         spawn("keepalive", move || loop {
             mlzlog::set_thread_prefix("TCP: ");
@@ -293,85 +292,47 @@ impl Distributor {
             let index = event.index();
             if index == new_conn {
                 DistEvent::NewClient(event.recv(&self.conn_rx).unwrap())
-            }
-            else if index < new_conn {
+            } else if index < new_conn {
                 let index = index_in_clients[event.index()];
                 if let Ok(ReadEvent::Msg(msg)) = event.recv(&self.clients[index].chan) { // XX1
                     DistEvent::ClientMessage(index, msg)
                 } else {
                     DistEvent::ClientQuit(index)
                 }
+            } else if let Ok(ReadEvent::Msg(msg)) = event.recv(bh_chan) {
+                DistEvent::BeckhoffMessage(msg)
             } else {
-                if let Ok(ReadEvent::Msg(msg)) = event.recv(bh_chan) {
-                    DistEvent::BeckhoffMessage(msg)
-                } else {
-                    DistEvent::BeckhoffQuit
-                }
+                DistEvent::BeckhoffQuit
             }
         } else {
             DistEvent::None
         }
     }
 
-
-    fn handle_notification(&mut self, msg : AdsMessage) {
-        if msg.0.len() >= 45 {
-            let nots_len = LE::read_u32(&msg.0[38..]);
-            let num_stamps = LE::read_u32(&msg.0[42..]);
-            let timestamp = LE::read_u64(&msg.0[46..]);
-            let num_samples = LE::read_u32(&msg.0[54..]);
-            debug!("get_event notification nots_len={} num_stamps={} timestamp={} num_samples={}",
-                   nots_len, num_stamps, timestamp, num_samples);
-            let mut sample_idx = 0;
-            let mut read_index = 58;
-            // Hand-made loop
-            while sample_idx < num_samples {
-                let handle = LE::read_u32(&msg.0[read_index..]);
-                let sample_size = LE::read_u32(&msg.0[read_index+4..]);
-                let sample_data = &msg.0[read_index+8..read_index+8+sample_size as usize];
-                debug!("get_event notification sample_idx={} handle={} read_index={} sample_size={} sample_data={:?}",
-                       sample_idx, handle, read_index, sample_size, sample_data);
-                /* Distribute the notification */
-                match self.notif_handle_to_client_indices_map.get(&handle) {
+    /// Handle a notification message by splitting it into individual messages for
+    /// possibly different clients
+    fn handle_notification(&mut self, msg: AdsMessage) {
+        if let Ok(notif) = ads::notif::Notification::new(msg.0) {
+            for sample in notif.samples() {
+                match self.notif_handle_to_client_indices_map.get(&sample.handle) {
                     Some(notif_indices) => {
                         let is_reply = false;
                         let invoke_id = 0;
-                        /* construct a notification message */
-                        //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_adsnetref/7313446027.html&id=
-                        // Create one sample
-                        let mut rep_sample_data = Vec::new();
-                        rep_sample_data.write_u32::<LE>(handle).unwrap();
-                        rep_sample_data.write_u32::<LE>(sample_size).unwrap();
-                        rep_sample_data.write(sample_data).unwrap();
-                        // Create stamp header
-                        let rep_num_samples : u32 = 1;
-                        let mut rep_stamp_hdr = Vec::new();
-                        rep_stamp_hdr.write_u64::<LE>(timestamp).unwrap();
-                        rep_stamp_hdr.write_u32::<LE>(rep_num_samples).unwrap();
-                        rep_stamp_hdr.write(&rep_sample_data).unwrap();
-                        // Create stamp(s)
-                        let rep_num_stamps : u32 = 1;
-                        let stamp_length = (std::mem::size_of::<u32>() + rep_stamp_hdr.len()) as u32;
-                        let mut rep_notif_stream = Vec::new();
-                        rep_notif_stream.write_u32::<LE>(stamp_length).unwrap();
-                        rep_notif_stream.write_u32::<LE>(rep_num_stamps).unwrap();
-                        rep_notif_stream.write(&rep_stamp_hdr).unwrap();
-                        debug!("get_event notif_handle_to_client_indices_map notif_indices={:?} rep_sample_data={:?}",
-                               &notif_indices, rep_sample_data);
-                        debug!("get_event notif_handle_to_client_indices_map rep_notif_handle={} stream={:?}",
-                               &handle, &rep_notif_stream);
-                        for index in notif_indices {
-                            if self.clients.len() > *index {
-                                let client = &self.clients[*index];
+                        // Construct a fake message with a single notification
+                        let mut notif_data = NotifData::new();
+                        notif_data.add_stamp(sample.timestamp, &[(sample.handle, sample.data)]);
+                        for &index in notif_indices {
+                            if self.clients.len() > index {
+                                let client = &self.clients[index];
                                 if client.used {
                                     let reply = AdsMessage::new(client.client_id,
                                                                 client.client_source_port,
                                                                 client.clients_bh_id,
                                                                 client.clients_bh_dest_port,
-                                                                msg.get_cmd(),
-                                                                &rep_notif_stream,
+                                                                NOTIF,
                                                                 is_reply,
-                                                                invoke_id);
+                                                                invoke_id,
+                                                                notif_data.data());
                                     if self.summarize {
                                         reply.summarize(InOutClientBH::OutToClnt, self.dump);
                                     }
@@ -380,29 +341,16 @@ impl Distributor {
                                     }
                                 } else {
                                     info!("TODO: get_event client not used any more index={}",
-                                          *index);
+                                          index);
                                 }
                             } else {
                                 info!("TODO: get_event client not in list any more index={}",
-                                      *index);
+                                      index);
                             }
                         }
-                        self.notif_handle_to_last_notif_stream_map.insert(handle, rep_notif_stream);
+                        self.notif_handle_to_last_notif_stream_map.insert(sample.handle, notif_data);
                     }
-                    None => {info!("get_event notif_handle_to_client_indices_map.get=None");}
-                }
-                read_index = read_index + 8 + sample_size as usize;
-                sample_idx = sample_idx + 1;
-            }
-            // Using an iterator from ads
-            if false {
-                if let Ok(notif) = ads::notif::Notification::new(msg.0) {
-                    for sample in notif.samples() {
-                        info!("get_event notification sample handle={} timestamp={}",
-                              sample.handle, sample.timestamp);
-                    }
-                } else {
-                    info!("get_event notification Not Ok(notif) ");
+                    None => info!("get_event notif_handle_to_client_indices_map.get=None")
                 }
             }
         }
@@ -423,7 +371,7 @@ impl Distributor {
                 return;
             }
             // get an event
-            match self.get_event(&bh_chan) { //XX2
+            match self.get_event(&bh_chan) {
                 DistEvent::NewClient(sock) => if let Err(e) = self.new_tcp_conn(sock) {
                     warn!("error handling new client connection: {:#}", e);
                 },
@@ -436,72 +384,69 @@ impl Distributor {
                         msg.summarize(InOutClientBH::InFrmBeck, self.dump);
                     }
 
-                    /*********************/
-                    if msg.get_dest_id() == self.local_ams_net_id && msg.get_cmd() == 4 {
+                    // Reply to GetState query from the Beckhoff's AMS router
+                    if msg.get_dest_id() == self.local_ams_net_id && msg.get_cmd() == GETSTATE {
                         let stf = msg.get_state_flags();
                         let is_reply = stf & 1 != 0;
-                        if ! is_reply {
-                            let reply_msg = AdsMessage::new(self.bh.netid, 10000, self.local_ams_net_id, 10000, 4, b"\x00\x05\x00\x00", true,0);
+                        if !is_reply {
+                            let reply_msg = AdsMessage::new(self.bh.netid, 10000,
+                                                            self.local_ams_net_id, 10000, 4,
+                                                            true, 0, b"\x00\x05\x00\x00");
                             bh_sock.write_all(&reply_msg.0).unwrap();
                             info!("replied to router GetState msg");
                             continue 'select;
                         }
                     }
-                    /*********************/
+
                     if self.single_ams_net_id {
                         let cmd = msg.get_cmd();
-                        match cmd {
-                            7 => { // Delete notification
-                                // Do something ?
-                                continue 'select;
-                            }
-                            8 => { // Notification
-                                self.handle_notification(msg);
-                                continue 'select;
-                            }
-                            _ => {}
+                        if cmd == DELNOTIF {
+                            // Do something ?
+                            continue 'select;
+                        } else if cmd == NOTIF {
+                            self.handle_notification(msg);
+                            continue 'select;
                         }
 
+                        // find the matching invoke ID and client for this message
                         let invoke_id_patched = msg.get_invoke_id();
                         match self.invoke_id_to_client_map.remove(&invoke_id_patched) {
-                            Some(client_req_invoke_id) => {
-                                let index = client_req_invoke_id.index;
-                                let invoke_id_orig = client_req_invoke_id.invoke_id;
+                            Some(client_req) => {
+                                let index = client_req.index;
+                                let invoke_id_orig = client_req.invoke_id;
                                 msg.patch_invoke_id(invoke_id_orig);
-                                let notification_handle = msg.get_add_notification_reply_handle();
-                                match notification_handle {
-                                    Some(handle) => {
-                                        debug!("get_event notif cmd={} handle={}", cmd, handle);
-                                        match &client_req_invoke_id.add_notif_req_data {
-                                            Some(add_notif_req_data) => {
-                                                self.notif_req_data_to_handle_map.insert(*add_notif_req_data, handle);
-                                                match self.notif_handle_to_client_indices_map.get_mut(&handle) {
-                                                    Some(notif_indices) => {
-                                                        debug!("get_event notif notif_indices={:?} index={}",
-                                                               &notif_indices, &index);
-                                                        notif_indices.push(index);
-                                                    }
-                                                    _ => {
-                                                        let mut notif_indices = Vec::new();
-                                                        debug!("get_event notif notif_indices=new index={}",
-                                                               &index);
-                                                        notif_indices.push(index);
-                                                        self.notif_handle_to_client_indices_map.insert(handle, notif_indices);
-                                                    }
+
+                                // if it is an add-notification message, remember the notification handles
+                                if let Some(handle) = msg.get_add_notification_reply_handle() {
+                                    debug!("get_event notif cmd={} handle={}", cmd, handle);
+                                    match client_req.add_notif_req_data {
+                                        Some(add_notif_req_data) => {
+                                            self.notif_req_data_to_handle_map.insert(add_notif_req_data, handle);
+                                            match self.notif_handle_to_client_indices_map.get_mut(&handle) {
+                                                Some(notif_indices) => {
+                                                    debug!("get_event notif notif_indices={:?} index={}",
+                                                           &notif_indices, &index);
+                                                    notif_indices.push(index);
                                                 }
-                                            },
-                                            _ => {
-                                                info!("get_add_notification_reply_handle=None");
+                                                _ => {
+                                                    let mut notif_indices = Vec::new();
+                                                    debug!("get_event notif notif_indices=new index={}",
+                                                           &index);
+                                                    notif_indices.push(index);
+                                                    self.notif_handle_to_client_indices_map.insert(handle, notif_indices);
+                                                }
                                             }
+                                        },
+                                        _ => {
+                                            info!("get_add_notification_reply_handle=None");
                                         }
-                                    },
-                                    _ => {}
+                                    }
                                 }
-                                let index = client_req_invoke_id.index;
+                                let index = client_req.index;
                                 if index >= self.clients.len() {
                                     info!("get_event index={} has gone clients.len()={}",
                                           index, self.clients.len());
-                                    // TODO: We loose a handle here on the PLC
+                                    // TODO: We lose a handle here on the PLC
                                     continue 'select;
                                 }
 
@@ -532,8 +477,9 @@ impl Distributor {
                         warn!("message from Beckhoff to {} not forwarded", msg.get_dest_id());
                         continue 'select;
                     }
-                    if msg.get_cmd() == 4 {
-                        let reply_msg = AdsMessage::new(self.bh.netid, 10000, self.local_ams_net_id, 10000, 4, b"\x00\x05\x00\x00", true,0);
+                    if msg.get_cmd() == GETSTATE {
+                        let reply_msg = AdsMessage::new(self.bh.netid, 10000, self.local_ams_net_id,
+                                                        10000, 4, true, 0, b"\x00\x05\x00\x00");
                         bh_sock.write_all(&reply_msg.0).unwrap();
                         info!("replied to router GetState msg");
                     }
@@ -551,72 +497,65 @@ impl Distributor {
                         }
                         info!("connection from {} closed", clientx.peer);
                     }
-                    let mut notif_req_data_to_beleted : Option<crate::util::AddNotifReqData> = None;
+                    let mut notif_req_data_to_beleted = None;
                     for notif_req_data in self.notif_req_data_to_handle_map.keys() {
                         debug!("ClientQuit notif_req_data_to_handle_map notif_req_datae={:?}", &notif_req_data);
-                        match self.notif_req_data_to_handle_map.get(&notif_req_data) {
-                            Some(handle) => {
-                                match self.notif_handle_to_client_indices_map.get_mut(&handle) {
-                                    Some(notif_indices) => {
-                                        debug!("ClientQuit handle={} notif_indices={:?}",
-                                              &handle, &notif_indices);
-                                        let mut nindex = 0;
-                                        let mut removed_index = 0xFFFFFFF;
-                                        while nindex < notif_indices.len() {
-                                            if notif_indices[nindex] == index {
-                                                removed_index = notif_indices.swap_remove(nindex);
-                                                break;
-                                            }
-                                            nindex = nindex + 1;
+                        if let Some(&handle) = self.notif_req_data_to_handle_map.get(&notif_req_data) {
+                            match self.notif_handle_to_client_indices_map.get_mut(&handle) {
+                                Some(notif_indices) => {
+                                    debug!("ClientQuit handle={} notif_indices={:?}",
+                                          &handle, &notif_indices);
+                                    let mut nindex = 0;
+                                    let mut removed_index = 0xFFFFFFF;
+                                    while nindex < notif_indices.len() {
+                                        if notif_indices[nindex] == index {
+                                            removed_index = notif_indices.swap_remove(nindex);
+                                            break;
                                         }
-                                        if notif_indices.len() == 0 {
-                                            notif_req_data_to_beleted = std::option::Option::Some(*notif_req_data);
-                                            debug!("ClientQuit notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
-                                                  &removed_index);
-                                            let is_reply = false;
-                                            let invoke_id = 0;
-                                            let mut data = Vec::new();
-                                            data.write_u32::<LE>(*handle).unwrap();
-
-                                            let req_msg = AdsMessage::new(self.bh.netid,
-                                                                          notif_req_data.dest_port,
-                                                                          self.local_ams_net_id,
-                                                                          10000,
-                                                                          7, &data,
-                                                                          is_reply, invoke_id);
-                                            if self.summarize {
-                                                println!("To Beckhoff =========================================");
-                                                req_msg.summarize(InOutClientBH::OutToBeck, self.dump);
-                                            }
-                                            bh_sock.write_all(&req_msg.0).unwrap();
-                                        } else {
-                                            debug!("ClientQuit  notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
-                                                   &notif_indices, &removed_index);
-                                        }
-                                        debug!("ClientQuit after retain: notif_indices={:?}",
-                                              notif_indices);
+                                        nindex += 1;
                                     }
-                                    None => {debug!("ClientQuit notif_indices=None");}
-                                }
-                            }
-                            None => {}
+                                    if notif_indices.is_empty() {
+                                        notif_req_data_to_beleted = Some(*notif_req_data);
+                                        debug!("ClientQuit notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
+                                              &removed_index);
+                                        let is_reply = false;
+                                        let invoke_id = 0;
+                                        let mut data = Vec::new();
+                                        data.write_u32::<LE>(handle).unwrap();
 
+                                        let req_msg = AdsMessage::new(self.bh.netid,
+                                                                      notif_req_data.dest_port,
+                                                                      self.local_ams_net_id,
+                                                                      10000,
+                                                                      7, is_reply, invoke_id,
+                                                                      &data);
+                                        if self.summarize {
+                                            println!("To Beckhoff =========================================");
+                                            req_msg.summarize(InOutClientBH::OutToBeck, self.dump);
+                                        }
+                                        bh_sock.write_all(&req_msg.0).unwrap();
+                                    } else {
+                                        debug!("ClientQuit  notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
+                                               &notif_indices, &removed_index);
+                                    }
+                                    debug!("ClientQuit after retain: notif_indices={:?}",
+                                           notif_indices);
+                                }
+                                None => debug!("ClientQuit notif_indices=None"),
+                            }
                         }
                     }
                     // Delete the handle from the map
-                    match notif_req_data_to_beleted {
-                        Some(notif_req_data) => {
-                            self.notif_req_data_to_handle_map.remove(&notif_req_data);
-                        }
-                        None => {}
+                    if let Some(notif_req_data) = notif_req_data_to_beleted {
+                        self.notif_req_data_to_handle_map.remove(&notif_req_data);
                     }
                 },
                 DistEvent::BeckhoffQuit => {
                     error!("Beckhoff closed socket!");
-                    for index in 0..self.clients.len() {
-                        if self.clients[index].used {
-                            if let Err(e) = (&self.clients[index].sock).shutdown(Shutdown::Write) {
-                                warn!("error shuting down client {}: {}", index, e);
+                    for client in &mut self.clients {
+                        if client.used {
+                            if let Err(e) = client.sock.shutdown(Shutdown::Both) {
+                                warn!("error shutting down client: {}", e);
                             }
                         }
                     }
@@ -647,7 +586,7 @@ impl Distributor {
         let (cl_tx, cl_rx) = crossbeam_channel::unbounded();
         let sock2 = sock.try_clone()?;
         spawn("client reader", move || read_loop(sock2, cl_tx));
-        let id = self.ids.pop().ok_or(anyhow!("too many clients"))?;
+        let id = self.ids.pop().ok_or_else(|| anyhow!("too many clients"))?;
         let virtual_id = AmsNetId([10, 1, 0, id, 1, 1]);
         if ! self.single_ams_net_id {
             info!("assigned virtual NetID {}", virtual_id);
@@ -712,94 +651,90 @@ impl Distributor {
                the notifications to all clients, that asked for it.
             */
             let mut add_notif_req_data = None;
-            if request.get_cmd() == 6 { // AddNotif
+            if request.get_cmd() == ADDNOTIF {
                 add_notif_req_data = request.get_add_notif_req_data();
                 debug!("client_msg add_notif_req_data=XX{:#?}",
-                      add_notif_req_data);
+                       add_notif_req_data);
 
                 /************************************/
-                match add_notif_req_data {
-                    Some(add_notif_req_data0) => {
-                        match self.notif_req_data_to_handle_map.get(&add_notif_req_data0) {
-                            Some(handle) => {
-                                debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} handle={:?}",
-                                       &add_notif_req_data0, &handle);
-                                // There is already a notification
-                                match self.notif_handle_to_client_indices_map.get_mut(&handle) {
-                                    Some(notif_indices) => {
-                                        debug!("get_event client_msg add_notif_req index={} notif_indices={:?}",
-                                              &index, &notif_indices);
-                                        notif_indices.push(index);
-                                    }
-                                    None => {debug!("get_event add_notif_req notif_indices=None");}
+                if let Some(add_notif_req_data0) = add_notif_req_data {
+                    match self.notif_req_data_to_handle_map.get(&add_notif_req_data0) {
+                        Some(handle) => {
+                            debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} handle={:?}",
+                                   &add_notif_req_data0, &handle);
+                            // There is already a notification
+                            match self.notif_handle_to_client_indices_map.get_mut(&handle) {
+                                Some(notif_indices) => {
+                                    debug!("get_event client_msg add_notif_req index={} notif_indices={:?}",
+                                          &index, &notif_indices);
+                                    notif_indices.push(index);
                                 }
-                                {
-                                    // Format a response
-                                    let mut data = Vec::new();
-                                    let result = 0;
-                                    data.write_u32::<LE>(result).unwrap();
-                                    data.write_u32::<LE>(*handle).unwrap();
-                                    let is_reply = true;
-                                    let reply_msg = AdsMessage::new(request.get_source_id(),
-                                                                    request.get_source_port(),
-                                                                    request.get_dest_id(),
-                                                                    request.get_dest_port(),
-                                                                    request.get_cmd(),
-                                                                    &data,
-                                                                    is_reply,
-                                                                    request.get_invoke_id()
-                                    );
+                                None => {debug!("get_event add_notif_req notif_indices=None");}
+                            }
+                            {
+                                // Format a response
+                                let mut data = Vec::new();
+                                let result = 0;
+                                data.write_u32::<LE>(result).unwrap();
+                                data.write_u32::<LE>(*handle).unwrap();
+                                let is_reply = true;
+                                let reply_msg = AdsMessage::new(request.get_source_id(),
+                                                                request.get_source_port(),
+                                                                request.get_dest_id(),
+                                                                request.get_dest_port(),
+                                                                request.get_cmd(),
+                                                                is_reply,
+                                                                request.get_invoke_id(),
+                                                                &data,
+                                );
+                                if self.summarize {
+                                    request.summarize(InOutClientBH::OutToClnt, self.dump);
+                                }
+                                debug!("notif_req_data_to_handle_map return index={}",
+                                      &index);
+                                if let Err(e) = (&client.sock).write_all(&reply_msg.0) {
+                                    warn!("error forwarding reply to client: {}", e);
+                                }
+                            }
+                            /* Fake a notification */
+                            match self.notif_handle_to_last_notif_stream_map.get(&handle) {
+                                Some(notif_data) => {
+                                    info!("get_event notif_handle_to_last_notif_stream_map handle={}", handle);
+                                    /***************/
+                                    let is_reply = false;
+                                    let invoke_id = 0;
+                                    let noti_msg = AdsMessage::new(request.get_source_id(),
+                                                                   request.get_source_port(),
+                                                                   request.get_dest_id(),
+                                                                   request.get_dest_port(),
+                                                                   8,
+                                                                   is_reply,
+                                                                   invoke_id,
+                                                                   notif_data.data());
                                     if self.summarize {
                                         request.summarize(InOutClientBH::OutToClnt, self.dump);
                                     }
-                                    debug!("notif_req_data_to_handle_map return index={}",
-                                          &index);
-                                    if let Err(e) = (&client.sock).write_all(&reply_msg.0) {
+                                    if let Err(e) = (&client.sock).write_all(&noti_msg.0) {
                                         warn!("error forwarding reply to client: {}", e);
                                     }
+                                    /***************/
                                 }
-                                /* Fake a notification */
-                                match self.notif_handle_to_last_notif_stream_map.get(&handle) {
-                                    Some(rep_notif_stream) => {
-                                        info!("get_event notif_handle_to_last_notif_stream_map handle={} stream={:?}",
-                                              &handle, &rep_notif_stream);
-                                        /***************/
-                                        let is_reply = false;
-                                        let invoke_id = 0;
-                                        let noti_msg = AdsMessage::new(request.get_source_id(),
-                                                                       request.get_source_port(),
-                                                                       request.get_dest_id(),
-                                                                       request.get_dest_port(),
-                                                                       8,
-                                                                       &rep_notif_stream,
-                                                                       is_reply,
-                                                                       invoke_id);
-                                        if self.summarize {
-                                            request.summarize(InOutClientBH::OutToClnt, self.dump);
-                                        }
-                                        if let Err(e) = (&client.sock).write_all(&noti_msg.0) {
-                                            warn!("error forwarding reply to client: {}", e);
-                                        }
-                                        /***************/
-                                    }
-                                    None => {
-                                        info!("get_event notif_handle_to_last_notif_stream_map handle={} stream=None",
-                                              &handle);
-                                    }
+                                None => {
+                                    info!("get_event notif_handle_to_last_notif_stream_map handle={} stream=None",
+                                          &handle);
                                 }
+                            }
 
-                                return
-                            }
-                            None => {
-                                debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} no handle yet",
-                                       &add_notif_req_data0);
-                                request.patch_source_port(10000);
-                            }
+                            return
+                        }
+                        None => {
+                            debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} no handle yet",
+                                   &add_notif_req_data0);
+                            request.patch_source_port(10000);
                         }
                     }
-                    None => {}
                 }
-            } else if request.get_cmd() == 7 {
+            } else if request.get_cmd() == DELNOTIF {
                 // Delete notification
                 let mut answer_client_do_not_talk_to_beckhoff = true;
                 let len = request.get_length();
@@ -821,9 +756,9 @@ impl Distributor {
                                 removed_index = notif_indices.swap_remove(nindex);
                                 break;
                             }
-                            nindex = nindex + 1;
+                            nindex += 1;
                         }
-                        if notif_indices.len() == 0 {
+                        if notif_indices.is_empty() {
                             info!("get_event cmd==7 notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
                                   &removed_index);
                             if removed_index == index {
@@ -843,9 +778,9 @@ impl Distributor {
                                                     request.get_dest_id(),
                                                     request.get_dest_port(),
                                                     request.get_cmd(),
-                                                    b"\x00\x00\x00\x00",
                                                     is_reply,
-                                                    request.get_invoke_id());
+                                                    request.get_invoke_id(),
+                                                    b"\x00\x00\x00\x00");
                     if self.summarize {
                         reply_msg.summarize(InOutClientBH::OutToClnt, self.dump);
                     }
@@ -865,7 +800,9 @@ impl Distributor {
             let invoke_id = self.invoke_id_tmp;
             request.patch_invoke_id(invoke_id);
 
-            let client_req_invoke_id = ClientReqInvokeId {index: index, invoke_id: invoke_id_orig, add_notif_req_data: add_notif_req_data};
+            let client_req_invoke_id = ClientRequest { index,
+                                                       invoke_id: invoke_id_orig,
+                                                       add_notif_req_data };
             self.invoke_id_to_client_map.insert(invoke_id, client_req_invoke_id);
         } else {
             request.patch_source_id(client.virtual_id);
@@ -883,8 +820,8 @@ impl Distributor {
 
 
 impl Forwarder {
-    pub fn new(opts: Options, bh: Beckhoff, local_ams_net_id : AmsNetId) -> Self {
-        Forwarder { opts, bh, local_ams_net_id }
+    pub fn new(opts: Options, bh: Beckhoff) -> Self {
+        Forwarder { opts, bh }
     }
 
     /// Run the UDP forwarder on a given UDP port.
@@ -940,16 +877,14 @@ impl Forwarder {
         signal_hook::flag::register(signal_hook::consts::SIGTERM, atomic.clone())
             .expect("register signal");
 
-        info!("run_tcp_distributor local_ams_net_id={}", self.local_ams_net_id);
-        //let Some(self.opts.local_ams_net_id) => {
-        Distributor { // XX5
+        debug!("run_tcp_distributor local_ams_net_id={:?}", self.opts.local_ams_net_id);
+        Distributor {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
             dump: self.opts.dump,
             summarize: self.opts.summarize,
-            _print_ads_headers: self.opts.print_ads_headers, // Not use any more
             single_ams_net_id: self.opts.single_ams_net_id,
-            local_ams_net_id: self.local_ams_net_id,
+            local_ams_net_id: self.opts.local_ams_net_id.unwrap_or(FWDER_NETID),
             sig: atomic,
             clients: Vec::with_capacity(4),
             invoke_id_tmp: 0,
@@ -973,7 +908,7 @@ impl Forwarder {
             // main loop: send new client sockets to distributor
             for conn in srv_sock.incoming() {
                 if let Ok(conn) = conn {
-                    if let Ok(_) = conn.set_nodelay(true) {
+                    if conn.set_nodelay(true).is_ok() {
                         let _ = conn_tx.send(conn);
                     }
                 }
@@ -995,7 +930,8 @@ impl Forwarder {
         } else {
             // add route to ourselves - without it, TCP connections are
             // closed immediately
-            if let Err(e) = self.bh.add_route(self.local_ams_net_id, "forwarder") {
+            if let Err(e) = self.bh.add_route(self.opts.local_ams_net_id.unwrap_or(FWDER_NETID),
+                                              "forwarder") {
                 bail!("TCP: while adding backroute: {}", e);
             }
             // start TCP forwarding

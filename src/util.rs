@@ -20,6 +20,7 @@
 //
 // *****************************************************************************
 
+use std::convert::TryInto;
 use std::io::Write;
 
 use ads::AmsNetId;
@@ -33,6 +34,16 @@ pub const BECKHOFF_UDP_PORT:    u16 = ads::UDP_PORT; // 0xBF03
 pub const FWDER_NETID: AmsNetId = AmsNetId::new(10, 1, 0, 0, 1, 1);
 pub const DUMMY_NETID: AmsNetId = AmsNetId::new(1, 1, 1, 1, 1, 1);
 
+pub const DEVINFO:      u16 = 1;
+pub const READ:         u16 = 2;
+pub const WRITE:        u16 = 3;
+pub const GETSTATE:     u16 = 4;
+pub const WRITECONTROL: u16 = 5;
+pub const ADDNOTIF:     u16 = 6;
+pub const DELNOTIF:     u16 = 7;
+pub const NOTIF:        u16 = 8;
+pub const READWRITE:    u16 = 9;
+
 #[derive(Debug)]
 pub enum InOutClientBH {
     InFrmClnt,
@@ -44,9 +55,7 @@ pub enum InOutClientBH {
 /// Represents an ADS message.
 pub struct AdsMessage(pub Vec<u8>);
 
-#[derive(Debug)]
-#[derive(Copy,Clone)]
-//#[derive(Eq, Hash)]
+#[derive(Debug, Copy, Clone)]
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AddNotifReqData {
     pub dest_port:    u16, // The ADS port on the PLC where the notification is
@@ -56,22 +65,7 @@ pub struct AddNotifReqData {
     pub trans_mode:   u32,
     pub max_delay:    u32,
     pub cycle_time:   u32,
-    pub res_0:         u8,
-    pub res_1:         u8,
-    pub res_2:         u8,
-    pub res_3:         u8,
-    pub res_4:         u8,
-    pub res_5:         u8,
-    pub res_6:         u8,
-    pub res_7:         u8,
-    pub res_8:         u8,
-    pub res_9:         u8,
-    pub res_10:        u8,
-    pub res_11:        u8,
-    pub res_12:        u8,
-    pub res_13:        u8,
-    pub res_14:        u8,
-    pub res_15:        u8,
+    pub res:          [u8; 16],
 }
 
 impl AdsMessage {
@@ -82,12 +76,8 @@ impl AdsMessage {
         msg
     }
 
-    pub const DEVINFO: u16 = 1;
-    pub const WRITE: u16 = 3;
-    //pub const DELNOTIF: u16 = 7;
-
     pub fn new(dstid: AmsNetId, dstport: u16, srcid: AmsNetId, srcport: u16,
-               cmd: u16, data: &[u8], reply: bool, invoke_id: u32) -> AdsMessage {
+               cmd: u16, reply: bool, invoke_id: u32, data: &[u8]) -> AdsMessage {
         let mut v = vec![0; 2];
         v.write_u32::<LE>(32 + data.len() as u32).unwrap();
         v.write_all(&dstid.0).unwrap();
@@ -140,7 +130,7 @@ impl AdsMessage {
     }
 
     pub fn get_add_notification_reply_handle(&self) -> Option<u32> {
-        if self.0.len() >= 45 && self.get_cmd() == 6 && LE::read_u32(&self.0[38..]) == 0 {
+        if self.0.len() >= 45 && self.get_cmd() == ADDNOTIF && LE::read_u32(&self.0[38..]) == 0 {
             Some::<u32>(LE::read_u32(&self.0[42..]))
         } else {
             None
@@ -174,92 +164,88 @@ impl AdsMessage {
         let inv = self.get_invoke_id();
         let cmd = self.get_cmd();
         let cmdname = match cmd {
-            1 => "DevInfo",
-            2 => "Read ",
-            3 => "Write",
-            4 => "GetState",
-            5 => "WriteControl",
-            6 => "AddNotif",
-            7 => "DelNotif",
-            8 => "Notification",
-            9 => "ReadWrite",
+            DEVINFO => "DevInfo",
+            READ => "Read ",
+            WRITE => "Write",
+            GETSTATE => "GetState",
+            WRITECONTROL => "WriteControl",
+            ADDNOTIF => "AddNotif",
+            DELNOTIF => "DelNotif",
+            NOTIF => "Notification",
+            READWRITE => "ReadWrite",
             _ => "???",
         };
         let reply = stf & 1 != 0;
 
-       let prefix = format!("{:?} {} {}:{}[{:#08x}]->{}:{}  {}",
-                            in_out_bh_clnt, if reply { "Rep" } else { "Req" },
-                            self.get_source_id(), self.get_source_port(),
-                            inv,
-                            self.get_dest_id(), self.get_dest_port(),
-                            cmdname);
-        match cmd {
-            8 => {
-                if self.0.len() >= 45 {
-                    let pay_len = LE::read_u32(&self.0[26..]);
-                    let error = LE::read_u32(&self.0[30..]);
-                    let invoke_id = LE::read_u32(&self.0[34..]);
-                    let nots_len = LE::read_u32(&self.0[38..]);
-                    let num_stamps = LE::read_u32(&self.0[42..]);
-                    let timestamp = LE::read_u64(&self.0[46..]);
-                    let num_samples = LE::read_u32(&self.0[54..]);
-                    println!("{}: pay_len={} error=={} invoke_id={} nots_len={} num_stamps={} timestamp={} num_samples={}",
-                             prefix, pay_len, error, invoke_id, nots_len, num_stamps, timestamp, num_samples);
-                    let mut sample_idx = 0;
-                    let mut read_index = 58;
-                    // Hand-made loop
-                    while sample_idx < num_samples {
-                        let handle = LE::read_u32(&self.0[read_index..]);
-                        let sample_size = LE::read_u32(&self.0[read_index+4..]);
-                        let sample_data = &self.0[read_index+8..read_index+8+sample_size as usize];
-                        println!("{}: sample_idx={} handle={} read_index={} sample_size={} sample_data={:?}",
-                                 prefix, sample_idx, handle, read_index, sample_size, sample_data);
-                        read_index = read_index + 8 + sample_size as usize;
-                        sample_idx = sample_idx + 1;
-                    }
-                }
+        let prefix = format!("{:?} {} {}:{}[{:#08x}]->{}:{}  {}",
+                             in_out_bh_clnt, if reply { "Rep" } else { "Req" },
+                             self.get_source_id(), self.get_source_port(),
+                             inv,
+                             self.get_dest_id(), self.get_dest_port(),
+                             cmdname);
+        if cmd == NOTIF && self.0.len() >= 45 {
+            let pay_len = LE::read_u32(&self.0[26..]);
+            let error = LE::read_u32(&self.0[30..]);
+            let invoke_id = LE::read_u32(&self.0[34..]);
+            let nots_len = LE::read_u32(&self.0[38..]);
+            let num_stamps = LE::read_u32(&self.0[42..]);
+            let timestamp = LE::read_u64(&self.0[46..]);
+            let num_samples = LE::read_u32(&self.0[54..]);
+            println!("{}: pay_len={} error=={} invoke_id={} nots_len={} num_stamps={} timestamp={} num_samples={}",
+                     prefix, pay_len, error, invoke_id, nots_len, num_stamps, timestamp, num_samples);
+            let mut sample_idx = 0;
+            let mut read_index = 58;
+            // Hand-made loop
+            while sample_idx < num_samples {
+                let handle = LE::read_u32(&self.0[read_index..]);
+                let sample_size = LE::read_u32(&self.0[read_index+4..]);
+                let sample_data = &self.0[read_index+8..read_index+8+sample_size as usize];
+                println!("{}: sample_idx={} handle={} read_index={} sample_size={} sample_data={:?}",
+                         prefix, sample_idx, handle, read_index, sample_size, sample_data);
+                read_index += 8 + sample_size as usize;
+                sample_idx += 1;
             }
-            _ => {}
         }
+
         if !reply {
             match cmd {
-                2 | 3  => if self.0.len() >= 50 {
+                READ | WRITE => if self.0.len() >= 50 {
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let len  = LE::read_u32(&self.0[46..]);
                     println!("{}: {:#x}:{:#x} {} bytes", prefix, igrp, ioff, len);
                 }
-                6 => if self.0.len() >= 61 {
+                ADDNOTIF => if self.0.len() >= 61 {
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let len  = LE::read_u32(&self.0[46..]);
                     let transmode = LE::read_u32(&self.0[50..]);
                     let maxdelay = LE::read_u32(&self.0[54..]);
                     let cycletime = LE::read_u32(&self.0[58..]);
-                    println!("{}: {:#x}:{:#x} {} bytes transmode={} maxdelay={} cycletime={}", prefix, igrp, ioff, len, transmode, maxdelay, cycletime);
+                    println!("{}: {:#x}:{:#x} {} bytes transmode={} maxdelay={} cycletime={}",
+                             prefix, igrp, ioff, len, transmode, maxdelay, cycletime);
                 }
-                7 => if self.0.len() >= 42 {
+                DELNOTIF => if self.0.len() >= 42 {
                     let handle = LE::read_u32(&self.0[38..]);
                     println!("{}: dport={} handle={}", prefix, dport, handle);
                 }
-                8 => {}
-                9 => if self.0.len() >= 54 {
+                READWRITE => if self.0.len() >= 54 {
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let rlen = LE::read_u32(&self.0[46..]);
                     let wlen = LE::read_u32(&self.0[50..]);
                     println!("{}: {:#x}:{:#x} {}/{} bytes", prefix, igrp, ioff, rlen, wlen);
                 }
-                _ => println!("REQXXX {}", prefix)
+                _ => {}
             }
         } else {
             match cmd {
-                6 => if self.0.len() >= 45 {
+                ADDNOTIF => if self.0.len() >= 45 {
                     let result = LE::read_u32(&self.0[38..]);
                     let handle = LE::read_u32(&self.0[42..]);
                     println!("{}: result={} handle={}", prefix, result, handle);
                 }
-                8 => {}
+                NOTIF => {}
                 _ => {
                     if err == 0 && self.0.len() >= 42 && LE::read_u32(&self.0[38..]) != 0 {
                         err = LE::read_u32(&self.0[38..]);
@@ -273,44 +259,23 @@ impl AdsMessage {
                 }
             }
         }
-        if do_hex == true {
+        if do_hex {
             hexdump(&self.0);
         }
     }
+
     pub fn get_add_notif_req_data(&self) -> Option<AddNotifReqData> {
-        if self.0.len() >= 78 && self.get_cmd() == 6 {
-            let dest_port = self.get_dest_port();
-            let igrp = LE::read_u32(&self.0[38..]);
-            let ioff = LE::read_u32(&self.0[42..]);
-            let len  = LE::read_u32(&self.0[46..]);
-            let transmode = LE::read_u32(&self.0[50..]);
-            let maxdelay = LE::read_u32(&self.0[54..]);
-            let cycletime = LE::read_u32(&self.0[58..]);
-            let add_notif_req_data = AddNotifReqData {
-                dest_port:    dest_port,
-                index_group:  igrp,
-                index_offset: ioff,
-                length:       len,
-                trans_mode:   transmode,
-                max_delay:    maxdelay,
-                cycle_time:   cycletime,
-                res_0:        self.0[62],
-                res_1:        self.0[63],
-                res_2:        self.0[64],
-                res_3:        self.0[65],
-                res_4:        self.0[66],
-                res_5:        self.0[67],
-                res_6:        self.0[68],
-                res_7:        self.0[69],
-                res_8:        self.0[70],
-                res_9:        self.0[71],
-                res_10:       self.0[72],
-                res_11:       self.0[73],
-                res_12:       self.0[74],
-                res_13:       self.0[75],
-                res_14:       self.0[76],
-                res_15:       self.0[77]  };
-            Some::<AddNotifReqData> ( add_notif_req_data )
+        if self.0.len() >= 78 && self.get_cmd() == ADDNOTIF {
+            Some(AddNotifReqData {
+                dest_port:    self.get_dest_port(),
+                index_group:  LE::read_u32(&self.0[38..]),
+                index_offset: LE::read_u32(&self.0[42..]),
+                length:       LE::read_u32(&self.0[46..]),
+                trans_mode:   LE::read_u32(&self.0[50..]),
+                max_delay:    LE::read_u32(&self.0[54..]),
+                cycle_time:   LE::read_u32(&self.0[58..]),
+                res:          self.0[62..78].try_into().unwrap(),
+            })
         } else {
             None
         }
@@ -318,4 +283,34 @@ impl AdsMessage {
 }
 
 
+// https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_ads_intro/115883019.html
+pub struct NotifData {
+    data: Vec<u8>,
+}
 
+impl NotifData {
+    pub fn new() -> Self {
+        Self {
+            data: vec![4, 0, 0, 0, 0, 0, 0, 0],  // length and number of stamps
+        }
+    }
+
+    pub fn add_stamp(&mut self, timestamp: u64, samples: &[(u32, &[u8])]) {
+        self.data.write_u64::<LE>(timestamp).unwrap();
+        self.data.write_u32::<LE>(samples.len() as u32).unwrap();
+        for sample in samples {
+            self.data.write_u32::<LE>(sample.0).unwrap();
+            self.data.write_u32::<LE>(sample.1.len() as u32).unwrap();
+            self.data.extend_from_slice(sample.1);
+        }
+        // update length and number of stamps
+        let new_len = self.data.len() as u32 - 4;
+        let new_count = LE::read_u32(&self.data[4..]) + 1;
+        LE::write_u32(&mut self.data, new_len);
+        LE::write_u32(&mut self.data[4..], new_count);
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}

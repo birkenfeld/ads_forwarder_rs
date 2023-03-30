@@ -31,7 +31,6 @@ mod util;
 
 use ads::{AmsNetId};
 use crate::scanner::{Scan, Scanner};
-use crate::util::{FWDER_NETID};
 
 
 /// A forwarder for Beckhoff ADS and UDP connections.
@@ -41,8 +40,6 @@ pub struct Options {
     forward: bool,
     #[structopt(short="U", long="udp-only", help="Forward only UDP")]
     udponly: bool,
-    #[structopt(short="p", long="print", help="Print ADS headers")]
-    print_ads_headers: bool,
     #[structopt(short="s", long="summarize", help="Summarize TCP packets")]
     summarize: bool,
     #[structopt(short="S", long="single-ams-net-id", help="Use only one AMS Net ID towards Beckhoff")]
@@ -51,15 +48,13 @@ pub struct Options {
     dump: bool,
     #[structopt(short="v", long="verbose", help="Show debug log messages")]
     verbose: bool,
-    #[structopt(short = "", long = "local-ams-net-id")]
+    #[structopt(long="local-ams-net-id")]
     local_ams_net_id: Option<AmsNetId>,
     #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     target: Option<String>,
 }
 
 fn main() {
-    //log::env_logger::init();
-    //log::init();
     let mut opts = Options::from_args();
     mlzlog::init(None::<&str>, "ads_forwarder",
                  mlzlog::Settings {
@@ -100,13 +95,7 @@ fn main() {
             error!("did not find exactly one Beckhoff for forwarding, exiting");
             process::exit(1);
         }
-        let mut local_ams_net_id : AmsNetId = FWDER_NETID;
-        match opts.local_ams_net_id {
-            Some(ll) => { local_ams_net_id = ll },
-            None => {},
-        }
-        info!("main local_ams_net_id={}", local_ams_net_id);
-        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap(),local_ams_net_id).run() {
+        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
             error!("while running forwarder: {:#}", e);
         }
     } else {

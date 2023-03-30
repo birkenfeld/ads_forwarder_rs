@@ -151,7 +151,7 @@ impl Scanner {
                 }
             } else if let Ok(msg) = udp::Message::parse(reply, udp::ServiceId::Identify, true) {
                 let name = msg.get_str(udp::Tag::ComputerName).unwrap_or("<???>");
-                let ver = msg.get_bytes(udp::Tag::TCVersion).ok_or(anyhow!("no version info"))?;
+                let ver = msg.get_bytes(udp::Tag::TCVersion).ok_or_else(|| anyhow!("no version info"))?;
                 info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
                       name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
                       msg.get_source(), bh_addr);
