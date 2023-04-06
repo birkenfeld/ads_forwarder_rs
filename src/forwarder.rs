@@ -316,6 +316,7 @@ impl Distributor {
             for sample in notif.samples() {
                 match self.notif_handle_to_client_indices_map.get(&sample.handle) {
                     Some(notif_indices) => {
+                        let mut any_client = false;
                         let is_reply = false;
                         let invoke_id = 0;
                         // Construct a fake message with a single notification
@@ -339,18 +340,21 @@ impl Distributor {
                                     if let Err(e) = (&client.sock).write_all(&reply.0) {
                                         warn!("error forwarding reply to client: {}", e);
                                     }
-                                } else {
-                                    info!("TODO: get_event client not used any more index={}",
-                                          index);
+                                    any_client = true;
                                 }
                             } else {
                                 info!("TODO: get_event client not in list any more index={}",
                                       index);
                             }
                         }
+                        if ! any_client {
+                            info!("TODO: get_event no client any more sample.handle={:?}",
+                                  sample.handle);
+                        }
                         self.notif_handle_to_last_notif_stream_map.insert(sample.handle, notif_data);
                     }
-                    None => info!("get_event notif_handle_to_client_indices_map.get=None")
+                    None => info!("get_event notif_handle_to_client_indices_map.get=None sample.handle={:?}",
+                                  sample.handle)
                 }
             }
         }
