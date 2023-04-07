@@ -347,11 +347,20 @@ impl Distributor {
                                       index);
                             }
                         }
-                        if ! any_client {
-                            info!("TODO: get_event no client any more sample.handle={:?}",
-                                  sample.handle);
+                        if any_client {
+                            self.notif_handle_to_last_notif_stream_map.insert(sample.handle, notif_data);
+                        } else {
+                            // It may happen, that we have send a DELNOTIF
+                            // and there are a few notifications in the pipe.
+                            // If we have old notif_data for this handle, something is wrong
+                            match self.notif_handle_to_last_notif_stream_map.remove(&sample.handle) {
+                                Some(_notif_data) => {
+                                    info!("get_event no client any more sample.handle={:?}",
+                                          sample.handle);
+                                }
+                                None => {}
+                            }
                         }
-                        self.notif_handle_to_last_notif_stream_map.insert(sample.handle, notif_data);
                     }
                     None => info!("get_event notif_handle_to_client_indices_map.get=None sample.handle={:?}",
                                   sample.handle)
@@ -538,6 +547,8 @@ impl Distributor {
                                             req_msg.summarize(InOutClientBH::OutToBeck, self.dump);
                                         }
                                         bh_sock.write_all(&req_msg.0).unwrap();
+                                        self.notif_handle_to_last_notif_stream_map.remove(&handle);
+
                                     } else {
                                         debug!("ClientQuit  notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
                                                &notif_indices, &removed_index);
