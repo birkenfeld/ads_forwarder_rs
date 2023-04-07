@@ -531,7 +531,7 @@ impl Distributor {
                                                                       notif_req_data.dest_port,
                                                                       self.local_ams_net_id,
                                                                       10000,
-                                                                      7, is_reply, invoke_id,
+                                                                      DELNOTIF, is_reply, invoke_id,
                                                                       &data);
                                         if self.summarize {
                                             println!("To Beckhoff =========================================");
@@ -743,13 +743,13 @@ impl Distributor {
                 let mut answer_client_do_not_talk_to_beckhoff = true;
                 let len = request.get_length();
                 let handle = LE::read_u32(&request.0[38..]);
-                info!("get_event cmd==7 len={} handle={}",
+                info!("get_event cmd==DELNOTIF len={} handle={}",
                       len, handle);
                 match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                     Some(notif_indices) => {
                         let mut nindex = 0;
                         let mut removed_index = 0xFFFFFFF;
-                        info!("get_event cmd==7 notif_handle_to_client_indices_map notif_indices before={:?}",
+                        info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices before={:?}",
                               &notif_indices);
                         // Find the client index.
                         // Note: A "client" can have more than one notifications
@@ -763,17 +763,17 @@ impl Distributor {
                             nindex += 1;
                         }
                         if notif_indices.is_empty() {
-                            info!("get_event cmd==7 notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
+                            info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
                                   &removed_index);
                             if removed_index == index {
                                 answer_client_do_not_talk_to_beckhoff = false;
                             }
                         } else {
-                            info!("get_event cmd==7 notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
+                            info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
                                   &notif_indices, &removed_index);
                         }
                     }
-                    None => {info!("get_event cmd==7 notif_handle_to_client_indices_map.get=None");}
+                    None => {info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map.get=None");}
                 }
                 if answer_client_do_not_talk_to_beckhoff {
                     let is_reply = true;
@@ -789,7 +789,7 @@ impl Distributor {
                         reply_msg.summarize(InOutClientBH::OutToClnt, self.dump);
                     }
                     if let Err(e) = (&client.sock).write_all(&reply_msg.0) {
-                        warn!("error reply cmd==7 to client: {}", e);
+                        warn!("error reply cmd==DELNOTIF to client: {}", e);
                     }
                     return;
                 }
