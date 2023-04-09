@@ -514,7 +514,7 @@ impl Distributor {
                         }
                         info!("connection from {} closed", clientx.peer);
                     }
-                    let mut notif_req_data_to_beleted = None;
+                    let mut notif_req_data_to_beleted = Vec::new();
                     for notif_req_data in self.notif_req_data_to_handle_map.keys() {
                         debug!("ClientQuit notif_req_data_to_handle_map notif_req_datae={:?}", &notif_req_data);
                         if let Some(&handle) = self.notif_req_data_to_handle_map.get(&notif_req_data) {
@@ -532,7 +532,8 @@ impl Distributor {
                                         nindex += 1;
                                     }
                                     if notif_indices.is_empty() {
-                                        notif_req_data_to_beleted = Some(*notif_req_data);
+                                        //notif_req_data_to_beleted.push(Some(*notif_req_data));
+                                        notif_req_data_to_beleted.push(*notif_req_data);
                                         debug!("ClientQuit notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
                                               &removed_index);
                                         let is_reply = false;
@@ -566,8 +567,12 @@ impl Distributor {
                         }
                     }
                     // Delete the handle from the map
-                    if let Some(notif_req_data) = notif_req_data_to_beleted {
-                        self.notif_req_data_to_handle_map.remove(&notif_req_data);
+                    debug!("ClientQuit notif_req_data_to_beleted={:?}",
+                           notif_req_data_to_beleted);
+                    for notif_req_data in notif_req_data_to_beleted {
+                        let handle = self.notif_req_data_to_handle_map.remove(&notif_req_data);
+                        debug!("ClientQuit notif_req_data_to_handle_map.remove notif_req_data={:?} handle={:?}",
+                               notif_req_data, handle);
                     }
                 },
                 DistEvent::BeckhoffQuit => {
