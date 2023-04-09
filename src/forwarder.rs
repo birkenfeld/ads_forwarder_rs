@@ -137,7 +137,7 @@ struct Distributor {
     single_ams_net_id: bool,
     sig: Arc<AtomicBool>,
     clients: Vec<ClientConn>,
-    invoke_id_tmp: u32,
+    invoke_id_client_req: u32,
     /* As we patch the invoke ID before sending it to the Beckhoff with
        our own maintained invoke ID, we need to remember which client
        belongs to which invoke ID */
@@ -811,8 +811,8 @@ impl Distributor {
             let invoke_id_orig = request.get_invoke_id();
             /* Since we do not clean up the hash table, limit the invoke id
                into a range of 64K */
-            self.invoke_id_tmp = ((self.invoke_id_tmp + 1) & 0xFFFF) | 0x80000000;
-            let invoke_id = self.invoke_id_tmp;
+            self.invoke_id_client_req = ((self.invoke_id_client_req + 1) & 0xFFFF) | 0x80000000;
+            let invoke_id = self.invoke_id_client_req;
             request.patch_invoke_id(invoke_id);
 
             let client_req_invoke_id = ClientRequest { index,
@@ -902,7 +902,7 @@ impl Forwarder {
             local_ams_net_id: self.opts.local_ams_net_id.unwrap_or(FWDER_NETID),
             sig: atomic,
             clients: Vec::with_capacity(4),
-            invoke_id_tmp: 0,
+            invoke_id_client_req: 0,
             invoke_id_to_client_map: HashMap::new(),
             notif_req_data_to_handle_map: HashMap::new(),
             notif_handle_to_client_indices_map: HashMap::new(),
