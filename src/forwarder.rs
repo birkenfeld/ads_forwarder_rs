@@ -103,8 +103,10 @@ impl Beckhoff {
         data.write_u32::<LE>(name.len() as u32 + 1).unwrap(); // Data-len
         data.write_all(name.as_bytes()).unwrap();
         data.write_all(&[0]).unwrap();
+        let invoke_id = 0;
+
         let msg = AdsMessage::new(self.netid, 10000, *netid, 40001,
-                                  WRITE, false, 0, &data);
+                                  WRITE, false, invoke_id, &data);
         sock.write_all(&msg.0).context("removing routes")?;
 
         Ok(())
@@ -138,6 +140,7 @@ struct Distributor {
     sig: Arc<AtomicBool>,
     clients: Vec<ClientConn>,
     invoke_id_client_req: u32,
+    invoke_id_our_req: u32,
     /* As we patch the invoke ID before sending it to the Beckhoff with
        our own maintained invoke ID, we need to remember which client
        belongs to which invoke ID */
@@ -239,8 +242,9 @@ impl Distributor {
     /// NetID is set to a known dummy value.
     fn run_keepalive(&self, sock: &TcpStream) -> Result<()> {
         let mut bh_sock = sock.try_clone()?;
+        let invoke_id = 0;
         let msg = AdsMessage::new(self.bh.netid, 10000, DUMMY_NETID, 40001,
-                                  DEVINFO, false, 0, &[]);
+                                  DEVINFO, false, invoke_id, &[]);
 
         spawn("keepalive", move || loop {
             mlzlog::set_thread_prefix("TCP: ");
@@ -532,7 +536,8 @@ impl Distributor {
                                         debug!("ClientQuit notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
                                               &removed_index);
                                         let is_reply = false;
-                                        let invoke_id = 0;
+                                        self.invoke_id_our_req = (self.invoke_id_our_req + 1) & 0xFFFF;
+                                        let invoke_id = self.invoke_id_our_req;
                                         let mut data = Vec::new();
                                         data.write_u32::<LE>(handle).unwrap();
 
@@ -903,6 +908,7 @@ impl Forwarder {
             sig: atomic,
             clients: Vec::with_capacity(4),
             invoke_id_client_req: 0,
+            invoke_id_our_req: 0,
             invoke_id_to_client_map: HashMap::new(),
             notif_req_data_to_handle_map: HashMap::new(),
             notif_handle_to_client_indices_map: HashMap::new(),

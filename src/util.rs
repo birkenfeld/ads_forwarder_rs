@@ -216,18 +216,20 @@ impl AdsMessage {
                     println!("{}: {:#x}:{:#x} {} bytes", prefix, igrp, ioff, len);
                 }
                 ADDNOTIF => if self.0.len() >= 61 {
+                    let invoke_id = LE::read_u32(&self.0[34..]);
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let len  = LE::read_u32(&self.0[46..]);
                     let transmode = LE::read_u32(&self.0[50..]);
                     let maxdelay = LE::read_u32(&self.0[54..]);
                     let cycletime = LE::read_u32(&self.0[58..]);
-                    println!("{}: {:#x}:{:#x} {} bytes transmode={} maxdelay={} cycletime={}",
-                             prefix, igrp, ioff, len, transmode, maxdelay, cycletime);
+                    println!("{}: {:#x}:{:#x} {} bytes transmode={} maxdelay={} cycletime={} invoke_id={}",
+                             prefix, igrp, ioff, len, transmode, maxdelay, cycletime, invoke_id);
                 }
                 DELNOTIF => if self.0.len() >= 42 {
+                    let invoke_id = LE::read_u32(&self.0[34..]);
                     let handle = LE::read_u32(&self.0[38..]);
-                    println!("{}: dport={} handle={}", prefix, dport, handle);
+                    println!("{}: dport={} handle={} invoke_id={}", prefix, dport, handle, invoke_id);
                 }
                 READWRITE => if self.0.len() >= 54 {
                     let igrp = LE::read_u32(&self.0[38..]);
@@ -241,20 +243,22 @@ impl AdsMessage {
         } else {
             match cmd {
                 ADDNOTIF => if self.0.len() >= 45 {
+                    let invoke_id = LE::read_u32(&self.0[34..]);
                     let result = LE::read_u32(&self.0[38..]);
                     let handle = LE::read_u32(&self.0[42..]);
-                    println!("{}: result={} handle={}", prefix, result, handle);
+                    println!("{}: result={} handle={} invoke_id={}", prefix, result, handle, invoke_id);
                 }
                 NOTIF => {}
                 _ => {
+                    let invoke_id = LE::read_u32(&self.0[34..]);
                     if err == 0 && self.0.len() >= 42 && LE::read_u32(&self.0[38..]) != 0 {
                         err = LE::read_u32(&self.0[38..]);
                     }
                     if err != 0 {
                         let msg: ads::Result<()> = ads::errors::ads_error("ERROR", err);
-                        println!("{}: {}\n", prefix, msg.unwrap_err());
+                        println!("{}: {} invoke_id={}\n", prefix, msg.unwrap_err(), invoke_id);
                     } else {
-                        println!("{}: no error\n", prefix);
+                        println!("{}: no error invoke_id={}\n", prefix, invoke_id);
                     }
                 }
             }
