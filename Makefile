@@ -6,7 +6,7 @@ build:
 	cargo build --release
 
 install: build
-	install -m 755 -D target/release/ads_forwarder $(DESTDIR)$(PREFIX)/bin/ads_forwarder
+	install -m 755 -D target/release/ads_forwarder_rs $(DESTDIR)$(PREFIX)/bin/ads_forwarder
 
 release-patch:
 	MODE="patch" $(MAKE) release
