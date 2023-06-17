@@ -80,11 +80,10 @@ impl Beckhoff {
             let msg = udp::Message::parse(&reply[..len], udp::ServiceId::AddRoute, true)
                 .context("parsing route reply")?;
             match msg.get_u32(udp::Tag::Status) {
-                Some(0) => { info!("added route if_addr={} netid={}",
-                                   self.bh_addr, netid);
+                Some(0) => { info!("added route if_addr={} netid={netid}", self.bh_addr);
                              return Ok(())},
                 Some(0x0704) => continue,  // password not accepted
-                Some(e) => bail!("error return when adding route: {:#x}", e),
+                Some(err) => bail!("error return when adding route: {err:#x}"),
                 None => bail!("invalid return message adding route"),
             }
         }
@@ -267,8 +266,8 @@ impl Distributor {
             self.clients.clear();
             match self.connect() {
                 Ok((bh_sock, bh_chan)) => self.handle_msg(bh_sock, bh_chan), // XX3
-                Err(e) => {
-                    error!("error on connection to Beckhoff: {:#}", e);
+                Err(err) => {
+                    error!("error on connection to Beckhoff: {err:#}");
                     thread::sleep(Duration::from_secs(1));
                 }
             }
@@ -341,14 +340,13 @@ impl Distributor {
                                     if self.summarize {
                                         reply.summarize(InOutClientBH::OutToClnt, self.dump);
                                     }
-                                    if let Err(e) = (&client.sock).write_all(&reply.0) {
-                                        warn!("error forwarding reply to client: {}", e);
+                                    if let Err(err) = (&client.sock).write_all(&reply.0) {
+                                        warn!("error forwarding reply to client: {err}");
                                     }
                                     any_client = true;
                                 }
                             } else {
-                                info!("TODO: get_event client not in list any more index={}",
-                                      index);
+                                info!("TODO: get_event client not in list any more index={index}");
                             }
                         }
                         if any_client {
@@ -359,14 +357,14 @@ impl Distributor {
                             // If we have old notif_data for this handle, something is wrong
                             match self.notif_handle_to_last_notif_stream_map.remove(&sample.handle) {
                                 Some(_notif_data) => {
-                                    info!("get_event no client any more sample.handle={:?}",
+                                    info!("get_event no client any more sample.handle={}",
                                           sample.handle);
                                 }
                                 None => {}
                             }
                         }
                     }
-                    None => info!("get_event notif_handle_to_client_indices_map.get=None sample.handle={:?}",
+                    None => info!("get_event notif_handle_to_client_indices_map.get=None sample.handle={}",
                                   sample.handle)
                 }
             }
@@ -379,18 +377,18 @@ impl Distributor {
             // check for interrupt signal
             if self.sig.load(Ordering::Relaxed) {
                 info!("exiting, removing routes...");
-                if let Err(e) = self.bh.remove_routes(&mut bh_sock, &self.local_ams_net_id, "forwarder") {
-                    warn!("could not remove forwarder route: {:#}", e);
+                if let Err(err) = self.bh.remove_routes(&mut bh_sock, &self.local_ams_net_id, "forwarder") {
+                    warn!("could not remove forwarder route: {err:#}");
                 }
-                if let Err(e) = self.bh.remove_routes(&mut bh_sock, &self.local_ams_net_id, "fwdclient") {
-                    warn!("could not remove forwarder client routes: {:#}", e);
+                if let Err(err) = self.bh.remove_routes(&mut bh_sock, &self.local_ams_net_id, "fwdclient") {
+                    warn!("could not remove forwarder client routes: {err:#}");
                 }
                 return;
             }
             // get an event
             match self.get_event(&bh_chan) {
-                DistEvent::NewClient(sock) => if let Err(e) = self.new_tcp_conn(sock) {
-                    warn!("error handling new client connection: {:#}", e);
+                DistEvent::NewClient(sock) => if let Err(err) = self.new_tcp_conn(sock) {
+                    warn!("error handling new client connection: {err:#}");
                 },
                 DistEvent::ClientMessage(index, msg) => {
                     self.client_msg(msg, index, &mut bh_sock);
@@ -435,22 +433,22 @@ impl Distributor {
 
                                 // if it is an add-notification message, remember the notification handles
                                 if let Some(handle) = msg.get_add_notification_reply_handle() {
-                                    debug!("get_event notif cmd={} handle={}", cmd, handle);
+                                    debug!("get_event notif cmd={cmd} handle={handle}");
                                     match client_req.add_notif_req_data {
                                         Some(add_notif_req_data) => {
                                             self.notif_req_data_to_handle_map.insert(add_notif_req_data, handle);
                                             match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                                                 Some(notif_indices) => {
-                                                    debug!("get_event notif notif_indices={:?} index={}",
-                                                           &notif_indices, &index);
+                                                    debug!("get_event notif notif_indices=\
+                                                            {notif_indices:?} index={index}");
                                                     notif_indices.push(index);
                                                 }
                                                 _ => {
                                                     let mut notif_indices = Vec::new();
-                                                    debug!("get_event notif notif_indices=new index={}",
-                                                           &index);
+                                                    debug!("get_event notif notif_indices=new index={index}");
                                                     notif_indices.push(index);
-                                                    self.notif_handle_to_client_indices_map.insert(handle, notif_indices);
+                                                    self.notif_handle_to_client_indices_map.insert(
+                                                        handle, notif_indices);
                                                 }
                                             }
                                         },
@@ -461,8 +459,8 @@ impl Distributor {
                                 }
                                 let index = client_req.index;
                                 if index >= self.clients.len() {
-                                    info!("get_event index={} has gone clients.len()={}",
-                                          index, self.clients.len());
+                                    info!("get_event index={index} has gone clients.len()={}",
+                                          self.clients.len());
                                     // TODO: We lose a handle here on the PLC
                                     continue 'select;
                                 }
@@ -474,8 +472,7 @@ impl Distributor {
                                 continue 'select;
                             },
                             None => {
-                                info!("get_event invoke_id_patched={} NOT FOUND",
-                                      invoke_id_patched);
+                                info!("get_event invoke_id_patched={invoke_id_patched} NOT FOUND");
                             },
                         }
                         continue 'select;
@@ -516,12 +513,11 @@ impl Distributor {
                     }
                     let mut notif_req_data_to_beleted = Vec::new();
                     for notif_req_data in self.notif_req_data_to_handle_map.keys() {
-                        debug!("ClientQuit notif_req_data_to_handle_map notif_req_datae={:?}", &notif_req_data);
+                        debug!("ClientQuit notif_req_data_to_handle_map notif_req_data={notif_req_data:?}");
                         if let Some(&handle) = self.notif_req_data_to_handle_map.get(&notif_req_data) {
                             match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                                 Some(notif_indices) => {
-                                    debug!("ClientQuit handle={} notif_indices={:?}",
-                                          &handle, &notif_indices);
+                                    debug!("ClientQuit handle={handle} notif_indices={notif_indices:?}");
                                     let mut nindex = 0;
                                     let mut removed_index = 0xFFFFFFF;
                                     while nindex < notif_indices.len() {
@@ -534,8 +530,8 @@ impl Distributor {
                                     if notif_indices.is_empty() {
                                         //notif_req_data_to_beleted.push(Some(*notif_req_data));
                                         notif_req_data_to_beleted.push(*notif_req_data);
-                                        debug!("ClientQuit notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
-                                              &removed_index);
+                                        debug!("ClientQuit notif_handle_to_client_indices_map notif_indices \
+                                                after=empty removed_index={removed_index}");
                                         let is_reply = false;
                                         self.invoke_id_our_req = (self.invoke_id_our_req + 1) & 0xFFFF;
                                         let invoke_id = self.invoke_id_our_req;
@@ -556,31 +552,29 @@ impl Distributor {
                                         self.notif_handle_to_last_notif_stream_map.remove(&handle);
 
                                     } else {
-                                        debug!("ClientQuit  notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
-                                               &notif_indices, &removed_index);
+                                        debug!("ClientQuit notif_handle_to_client_indices_map \
+                                                notif_indices after={notif_indices:?} removed_index={removed_index}");
                                     }
-                                    debug!("ClientQuit after retain: notif_indices={:?}",
-                                           notif_indices);
+                                    debug!("ClientQuit after retain: notif_indices={notif_indices:?}");
                                 }
                                 None => debug!("ClientQuit notif_indices=None"),
                             }
                         }
                     }
                     // Delete the handle from the map
-                    debug!("ClientQuit notif_req_data_to_beleted={:?}",
-                           notif_req_data_to_beleted);
+                    debug!("ClientQuit notif_req_data_to_beleted={notif_req_data_to_beleted:?}");
                     for notif_req_data in notif_req_data_to_beleted {
                         let handle = self.notif_req_data_to_handle_map.remove(&notif_req_data);
-                        debug!("ClientQuit notif_req_data_to_handle_map.remove notif_req_data={:?} handle={:?}",
-                               notif_req_data, handle);
+                        debug!("ClientQuit notif_req_data_to_handle_map.remove \
+                                notif_req_data={notif_req_data:?} handle={handle:?}");
                     }
                 },
                 DistEvent::BeckhoffQuit => {
                     error!("Beckhoff closed socket!");
                     for client in &mut self.clients {
                         if client.used {
-                            if let Err(e) = client.sock.shutdown(Shutdown::Both) {
-                                warn!("error shutting down client: {}", e);
+                            if let Err(err) = client.sock.shutdown(Shutdown::Both) {
+                                warn!("error shutting down client: {err}");
                             }
                         }
                     }
@@ -607,14 +601,14 @@ impl Distributor {
             spawn("BH reader", move || read_loop(sock, bh_tx));
             return Ok(())
         }
-        info!("new connection from {}", peer);
+        info!("new connection from {peer}");
         let (cl_tx, cl_rx) = crossbeam_channel::unbounded();
         let sock2 = sock.try_clone()?;
         spawn("client reader", move || read_loop(sock2, cl_tx));
         let id = self.ids.pop().ok_or_else(|| anyhow!("too many clients"))?;
         let virtual_id = AmsNetId([10, 1, 0, id, 1, 1]);
         if ! self.single_ams_net_id {
-            info!("assigned virtual NetID {}", virtual_id);
+            info!("assigned virtual NetID {virtual_id}");
         }
         self.clients.push(ClientConn { used: true, sock, peer, virtual_id, chan: cl_rx,
                                        client_id: Default::default(),
@@ -638,8 +632,8 @@ impl Distributor {
         }
         // if the socket is closed, the next read attempt will return Quit
         // and the client will be dropped, so only log send failures here
-        if let Err(e) = (&client.sock).write_all(&reply.0) {
-            warn!("error forwarding reply to client: {}", e);
+        if let Err(err) = (&client.sock).write_all(&reply.0) {
+            warn!("error forwarding reply to client: {err}");
         }
     }
 
@@ -652,16 +646,15 @@ impl Distributor {
         // first request: remember NetIDs of the requests
         let client = &mut self.clients[index];
         if client.client_id.is_zero() {
-            info!("client {} has NetID {}",
-                  client.peer, request.get_source_id());
+            info!("client {} has NetID {}", client.peer, request.get_source_id());
             client.client_id = request.get_source_id();
             client.client_source_port = request.get_source_port();
             client.clients_bh_id = request.get_dest_id();
             client.clients_bh_dest_port = request.get_dest_port();
 
-            if ! self.single_ams_net_id {
-                if let Err(e) = self.bh.add_route(client.virtual_id, "fwdclient") {
-                    error!("error setting up client route: {}", e);
+            if !self.single_ams_net_id {
+                if let Err(err) = self.bh.add_route(client.virtual_id, "fwdclient") {
+                    error!("error setting up client route: {err}");
                 } else {
                     info!("added client route successfully");
                 }
@@ -678,23 +671,24 @@ impl Distributor {
             let mut add_notif_req_data = None;
             if request.get_cmd() == ADDNOTIF {
                 add_notif_req_data = request.get_add_notif_req_data();
-                debug!("client_msg add_notif_req_data=XX{:#?}",
-                       add_notif_req_data);
+                debug!("client_msg add_notif_req_data={add_notif_req_data:#?}");
 
                 /************************************/
                 if let Some(add_notif_req_data0) = add_notif_req_data {
                     match self.notif_req_data_to_handle_map.get(&add_notif_req_data0) {
                         Some(handle) => {
-                            debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} handle={:?}",
-                                   &add_notif_req_data0, &handle);
+                            debug!("notif_req_data_to_handle_map add_notif_req_data0=\
+                                    {add_notif_req_data0:?} handle={handle}");
                             // There is already a notification
                             match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                                 Some(notif_indices) => {
-                                    debug!("get_event client_msg add_notif_req index={} notif_indices={:?}",
-                                          &index, &notif_indices);
+                                    debug!("get_event client_msg add_notif_req \
+                                            index={index} notif_indices={notif_indices:?}");
                                     notif_indices.push(index);
                                 }
-                                None => {debug!("get_event add_notif_req notif_indices=None");}
+                                None => {
+                                    debug!("get_event add_notif_req notif_indices=None");
+                                }
                             }
                             {
                                 // Format a response
@@ -715,16 +709,15 @@ impl Distributor {
                                 if self.summarize {
                                     request.summarize(InOutClientBH::OutToClnt, self.dump);
                                 }
-                                debug!("notif_req_data_to_handle_map return index={}",
-                                      &index);
-                                if let Err(e) = (&client.sock).write_all(&reply_msg.0) {
-                                    warn!("error forwarding reply to client: {}", e);
+                                debug!("notif_req_data_to_handle_map return index={index}");
+                                if let Err(err) = (&client.sock).write_all(&reply_msg.0) {
+                                    warn!("error forwarding reply to client: {err}");
                                 }
                             }
-                            /* Fake a notification */
+                            // Fake a notification
                             match self.notif_handle_to_last_notif_stream_map.get(&handle) {
                                 Some(notif_data) => {
-                                    info!("get_event notif_handle_to_last_notif_stream_map handle={}", handle);
+                                    info!("get_event notif_handle_to_last_notif_stream_map handle={handle}");
                                     /***************/
                                     let is_reply = false;
                                     let invoke_id = 0;
@@ -739,22 +732,22 @@ impl Distributor {
                                     if self.summarize {
                                         request.summarize(InOutClientBH::OutToClnt, self.dump);
                                     }
-                                    if let Err(e) = (&client.sock).write_all(&noti_msg.0) {
-                                        warn!("error forwarding reply to client: {}", e);
+                                    if let Err(err) = (&client.sock).write_all(&noti_msg.0) {
+                                        warn!("error forwarding reply to client: {err}");
                                     }
                                     /***************/
                                 }
                                 None => {
-                                    info!("get_event notif_handle_to_last_notif_stream_map handle={} stream=None",
-                                          &handle);
+                                    info!("get_event notif_handle_to_last_notif_stream_map \
+                                           handle={handle} stream=None");
                                 }
                             }
 
                             return
                         }
                         None => {
-                            debug!("notif_req_data_to_handle_map add_notif_req_data0={:?} no handle yet",
-                                   &add_notif_req_data0);
+                            debug!("notif_req_data_to_handle_map \
+                                    add_notif_req_data0={add_notif_req_data0:?} no handle yet");
                             request.patch_source_port(10000);
                         }
                     }
@@ -764,14 +757,13 @@ impl Distributor {
                 let mut answer_client_do_not_talk_to_beckhoff = true;
                 let len = request.get_length();
                 let handle = LE::read_u32(&request.0[38..]);
-                info!("get_event cmd==DELNOTIF len={} handle={}",
-                      len, handle);
+                info!("get_event cmd=DELNOTIF len={len} handle={handle}");
                 match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                     Some(notif_indices) => {
                         let mut nindex = 0;
                         let mut removed_index = 0xFFFFFFF;
-                        info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices before={:?}",
-                              &notif_indices);
+                        info!("get_event cmd=DELNOTIF notif_handle_to_client_indices_map \
+                               notif_indices before={notif_indices:?}");
                         // Find the client index.
                         // Note: A "client" can have more than one notifications
                         // This happens when we use a Windows system as a client,
@@ -784,17 +776,20 @@ impl Distributor {
                             nindex += 1;
                         }
                         if notif_indices.is_empty() {
-                            info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices after=empty removed_index={}",
-                                  &removed_index);
+                            info!("get_event cmd=DELNOTIF notif_handle_to_client_indices_map \
+                                   notif_indices after=empty removed_index={removed_index}");
                             if removed_index == index {
                                 answer_client_do_not_talk_to_beckhoff = false;
                             }
                         } else {
-                            info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map notif_indices after={:?} removed_index={}",
-                                  &notif_indices, &removed_index);
+                            info!("get_event cmd=DELNOTIF notif_handle_to_client_indices_map \
+                                   notif_indices after={notif_indices:?} \
+                                   removed_index={removed_index}");
                         }
                     }
-                    None => {info!("get_event cmd==DELNOTIF notif_handle_to_client_indices_map.get=None");}
+                    None => {
+                        info!("get_event cmd=DELNOTIF notif_handle_to_client_indices_map.get=None");
+                    }
                 }
                 if answer_client_do_not_talk_to_beckhoff {
                     let is_reply = true;
@@ -809,8 +804,8 @@ impl Distributor {
                     if self.summarize {
                         reply_msg.summarize(InOutClientBH::OutToClnt, self.dump);
                     }
-                    if let Err(e) = (&client.sock).write_all(&reply_msg.0) {
-                        warn!("error reply cmd==DELNOTIF to client: {}", e);
+                    if let Err(err) = (&client.sock).write_all(&reply_msg.0) {
+                        warn!("error reply cmd=DELNOTIF to client: {err}");
                     }
                     return;
                 }
@@ -837,8 +832,8 @@ impl Distributor {
         }
         // if the socket is closed, the next read attempt will return Quit
         // and the connection will be reopened
-        if let Err(e) = bh_sock.write_all(&request.0) {
-            warn!("error forwarding request to Beckhoff: {}", e);
+        if let Err(err) = bh_sock.write_all(&request.0) {
+            warn!("error forwarding request to Beckhoff: {err}");
         }
     }
 }
@@ -856,12 +851,12 @@ impl Forwarder {
     fn run_udp(&self, name: &'static str, port: u16) -> Result<()> {
         let sock = UdpSocket::bind(("0.0.0.0", port)).context("binding UDP socket")?;
         sock.set_broadcast(true)?;
-        info!("{}: bound to {}", name, sock.local_addr()?);
+        info!("{name}: bound to {}", sock.local_addr()?);
 
         let bh_ip = self.bh.bh_addr;
         let dump = self.opts.dump;
         spawn(name, move || {
-            mlzlog::set_thread_prefix(format!("{}: ", name));
+            mlzlog::set_thread_prefix(format!("{name}: "));
             let mut active_client = ("0.0.0.0".parse().unwrap(), 0);
             let mut buf = [0; 3072];
             loop {
@@ -869,23 +864,23 @@ impl Forwarder {
                     if addr.ip() != bh_ip {
                         let client = (addr.ip(), addr.port());
                         if client != active_client {
-                            info!("active client is now {}", addr);
+                            info!("active client is now {addr}");
                             active_client = client;
                         }
-                        info!("{} bytes client -> Beckhoff", len);
+                        info!("{len} bytes client -> Beckhoff");
                         if dump {
                             hexdump(&buf[..len]);
                         }
-                        if let Err(e) = sock.send_to(&buf[..len], (bh_ip, port)) {
-                            warn!("error forwarding request to Beckhoff: {}", e);
+                        if let Err(err) = sock.send_to(&buf[..len], (bh_ip, port)) {
+                            warn!("error forwarding request to Beckhoff: {err}");
                         }
                     } else {
-                        info!("{} bytes Beckhoff -> client", len);
+                        info!("{len} bytes Beckhoff -> client");
                         if dump {
                             hexdump(&buf[..len]);
                         }
-                        if let Err(e) = sock.send_to(&buf[..len], active_client) {
-                            warn!("error forwarding request to client: {}", e);
+                        if let Err(err) = sock.send_to(&buf[..len], active_client) {
+                            warn!("error forwarding request to client: {err}");
                         }
                     }
                 }
@@ -956,9 +951,10 @@ impl Forwarder {
         } else {
             // add route to ourselves - without it, TCP connections are
             // closed immediately
-            if let Err(e) = self.bh.add_route(self.opts.local_ams_net_id.unwrap_or(FWDER_NETID),
-                                              "forwarder") {
-                bail!("TCP: while adding backroute: {}", e);
+            if let Err(err) = self.bh.add_route(
+                self.opts.local_ams_net_id.unwrap_or(FWDER_NETID), "forwarder")
+            {
+                bail!("TCP: while adding backroute: {err}");
             }
             // start TCP forwarding
             let (conn_tx, conn_rx) = crossbeam_channel::unbounded();

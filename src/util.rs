@@ -178,12 +178,10 @@ impl AdsMessage {
         };
         let reply = stf & 1 != 0;
 
-        let prefix = format!("{:?} {} {}:{}[{:#08x}]->{}:{}  {}",
-                             in_out_bh_clnt, if reply { "Rep" } else { "Req" },
+        let prefix = format!("{in_out_bh_clnt:?} {} {}:{}[{inv:#08x}]->{}:{}  {cmdname}",
+                             if reply { "Rep" } else { "Req" },
                              self.get_source_id(), self.get_source_port(),
-                             inv,
-                             self.get_dest_id(), self.get_dest_port(),
-                             cmdname);
+                             self.get_dest_id(), self.get_dest_port());
         if cmd == NOTIF && self.0.len() >= 45 {
             let pay_len = LE::read_u32(&self.0[26..]);
             let error = LE::read_u32(&self.0[30..]);
@@ -192,8 +190,9 @@ impl AdsMessage {
             let num_stamps = LE::read_u32(&self.0[42..]);
             let timestamp = LE::read_u64(&self.0[46..]);
             let num_samples = LE::read_u32(&self.0[54..]);
-            debug!("{}: pay_len={} error=={} invoke_id={} nots_len={} num_stamps={} timestamp={} num_samples={}",
-                   prefix, pay_len, error, invoke_id, nots_len, num_stamps, timestamp, num_samples);
+            debug!("{prefix}: pay_len={pay_len} error={error} invoke_id={invoke_id} \
+                    nots_len={nots_len} num_stamps={num_stamps} timestamp={timestamp} \
+                    num_samples={num_samples}");
             let mut sample_idx = 0;
             let mut read_index = 58;
             // Hand-made loop
@@ -201,8 +200,8 @@ impl AdsMessage {
                 let handle = LE::read_u32(&self.0[read_index..]);
                 let sample_size = LE::read_u32(&self.0[read_index+4..]);
                 let sample_data = &self.0[read_index+8..read_index+8+sample_size as usize];
-                debug!("{}: sample_idx={} handle={} read_index={} sample_size={} sample_data={:?}",
-                       prefix, sample_idx, handle, read_index, sample_size, sample_data);
+                debug!("{prefix}: sample_idx={sample_idx} handle={handle} read_index={read_index} \
+                        sample_size={sample_size} sample_data={sample_data:?}");
                 read_index += 8 + sample_size as usize;
                 sample_idx += 1;
             }
@@ -214,7 +213,7 @@ impl AdsMessage {
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let len  = LE::read_u32(&self.0[46..]);
-                    debug!("{}: {:#x}:{:#x} {} bytes", prefix, igrp, ioff, len);
+                    debug!("{prefix}: {igrp:#x}:{ioff:#x} {len} bytes");
                 }
                 ADDNOTIF => if self.0.len() >= 61 {
                     let invoke_id = LE::read_u32(&self.0[34..]);
@@ -224,20 +223,20 @@ impl AdsMessage {
                     let transmode = LE::read_u32(&self.0[50..]);
                     let maxdelay = LE::read_u32(&self.0[54..]);
                     let cycletime = LE::read_u32(&self.0[58..]);
-                    debug!("{}: {:#x}:{:#x} {} bytes transmode={} maxdelay={} cycletime={} invoke_id={}",
-                           prefix, igrp, ioff, len, transmode, maxdelay, cycletime, invoke_id);
+                    debug!("{prefix}: {igrp:#x}:{ioff:#x} {len} bytes transmode={transmode} \
+                            maxdelay={maxdelay} cycletime={cycletime} invoke_id={invoke_id}");
                 }
                 DELNOTIF => if self.0.len() >= 42 {
                     let invoke_id = LE::read_u32(&self.0[34..]);
                     let handle = LE::read_u32(&self.0[38..]);
-                    debug!("{}: dport={} handle={} invoke_id={}", prefix, dport, handle, invoke_id);
+                    debug!("{prefix}: dport={dport} handle={handle} invoke_id={invoke_id}");
                 }
                 READWRITE => if self.0.len() >= 54 {
                     let igrp = LE::read_u32(&self.0[38..]);
                     let ioff = LE::read_u32(&self.0[42..]);
                     let rlen = LE::read_u32(&self.0[46..]);
                     let wlen = LE::read_u32(&self.0[50..]);
-                    debug!("{}: {:#x}:{:#x} {}/{} bytes", prefix, igrp, ioff, rlen, wlen);
+                    debug!("{prefix}: {igrp:#x}:{ioff:#x} {rlen}/{wlen} bytes");
                 }
                 _ => {}
             }
@@ -247,7 +246,7 @@ impl AdsMessage {
                     let invoke_id = LE::read_u32(&self.0[34..]);
                     let result = LE::read_u32(&self.0[38..]);
                     let handle = LE::read_u32(&self.0[42..]);
-                    debug!("{}: result={} handle={} invoke_id={}", prefix, result, handle, invoke_id);
+                    debug!("{prefix}: result={result} handle={handle} invoke_id={invoke_id}");
                 }
                 NOTIF => {}
                 _ => {
@@ -257,9 +256,9 @@ impl AdsMessage {
                     }
                     if err != 0 {
                         let msg: ads::Result<()> = ads::errors::ads_error("ERROR", err);
-                        debug!("{}: {} invoke_id={}\n", prefix, msg.unwrap_err(), invoke_id);
+                        debug!("{prefix}: {} invoke_id={invoke_id}\n", msg.unwrap_err());
                     } else {
-                        debug!("{}: no error invoke_id={}\n", prefix, invoke_id);
+                        debug!("{prefix}: no error invoke_id={invoke_id}\n");
                     }
                 }
             }

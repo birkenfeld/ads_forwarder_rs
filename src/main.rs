@@ -70,16 +70,16 @@ fn main() {
     // check out what argument was given (interface, IP address, NetID),
     // and scan for Beckhoffs an their NetIDs
     let mut beckhoffs = if scanner.if_exists(&what) {
-        debug!("scanning interface {}", what);
+        debug!("scanning interface {what}");
         scanner.scan(Scan::Interface(&what))
     } else if let Ok(addr) = what.parse::<net::Ipv4Addr>() {
-        debug!("scanning IP address {}", addr);
+        debug!("scanning IP address {addr}");
         scanner.scan(Scan::Address(addr))
     } else if let Ok(netid) = what.parse::<ads::AmsNetId>() {
-        debug!("scanning for AMS NetId {}", netid);
+        debug!("scanning for AMS NetId {netid}");
         scanner.scan(Scan::NetId(netid))
     } else if let Some(addr) = mlzutil::net::lookup_ipv4(&what) {
-        debug!("scanning host {}", what);
+        debug!("scanning host {what}");
         scanner.scan(Scan::Address(addr))
     } else if what.is_empty() {
         debug!("scanning everything");
@@ -95,8 +95,8 @@ fn main() {
             error!("did not find exactly one Beckhoff for forwarding, exiting");
             process::exit(1);
         }
-        if let Err(e) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
-            error!("while running forwarder: {:#}", e);
+        if let Err(err) = forwarder::Forwarder::new(opts, beckhoffs.pop().unwrap()).run() {
+            error!("while running forwarder: {err:#}");
         }
     } else {
         if beckhoffs.is_empty() {

@@ -66,8 +66,8 @@ impl Scanner {
     pub fn scan(&self, what: Scan) -> Vec<Beckhoff> {
         match self.scan_inner(what) {
             Ok(v) => v,
-            Err(e) => {
-                error!("during scan: {:#}", e);
+            Err(err) => {
+                error!("during scan: {err:#}");
                 Vec::new()
             }
         }
@@ -83,7 +83,7 @@ impl Scanner {
             Scan::Everything => {
                 let mut all = Vec::new();
                 for (if_name, &(if_addr, _)) in &self.if_addrs {
-                    debug!("scanning interface {}", if_name);
+                    debug!("scanning interface {if_name}");
                     all.extend(self.scan_addr(if_addr, broadcast, false)?);
                 }
                 Ok(all)
@@ -91,9 +91,9 @@ impl Scanner {
             Scan::NetId(netid) => {
                 // scan all interfaces until we found our NetID
                 for (if_name, &(if_addr, _)) in &self.if_addrs {
-                    debug!("scanning interface {}", if_name);
+                    debug!("scanning interface {if_name}");
                     let bhs = self.scan_addr(if_addr, broadcast, false)
-                                  .with_context(|| format!("scanning interface {}", if_name))?;
+                                  .with_context(|| format!("scanning interface {if_name}"))?;
                     if let Some(bh) = bhs.into_iter().find(|bh| bh.netid == netid) {
                         return Ok(vec![bh]);
                     }
@@ -135,7 +135,7 @@ impl Scanner {
         while let Ok((len, reply_addr)) = udp.recv_from(&mut reply) {
             let reply = &reply[..len];
             if self.dump {
-                info!("scan: reply from {}", reply_addr);
+                info!("scan: reply from {reply_addr}");
                 hexdump(reply);
             }
             let bh_addr = mlzutil::net::unwrap_ipv4(reply_addr.ip());
@@ -145,16 +145,15 @@ impl Scanner {
                     let name = &reply[22..32];
                     let name = String::from_utf8_lossy(
                         &name[..name.iter().position(|&ch| ch == 0).unwrap_or(10)]);
-                    info!("scan: found {} ({}) at {}", name, netid, bh_addr);
+                    info!("scan: found {name} ({netid}) at {bh_addr}");
                     beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                               typ: BhType::BC, bh_addr, netid });
                 }
             } else if let Ok(msg) = udp::Message::parse(reply, udp::ServiceId::Identify, true) {
                 let name = msg.get_str(udp::Tag::ComputerName).unwrap_or("<???>");
                 let ver = msg.get_bytes(udp::Tag::TCVersion).ok_or_else(|| anyhow!("no version info"))?;
-                info!("scan: found {}, TwinCat {}.{}.{} ({}) at {}",
-                      name, ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8,
-                      msg.get_source(), bh_addr);
+                info!("scan: found {name}, TwinCat {}.{}.{} ({}) at {bh_addr}",
+                      ver[0], ver[1], ver[2] as u16 | (ver[3] as u16) << 8, msg.get_source());
                 beckhoffs.push(Beckhoff { if_addr: self.find_if_addr(bh_addr),
                                           typ: if ver[0] == 2 { BhType::CX2 } else { BhType::CX3 },
                                           bh_addr, netid: msg.get_source().netid() });
@@ -179,7 +178,7 @@ impl Scanner {
         // not a local IP, check by trying to connect using TCP
         match TcpStream::connect((bh_addr, BECKHOFF_TCP_PORT)).and_then(|sock| sock.local_addr()) {
             Ok(addr) => mlzutil::net::unwrap_ipv4(addr.ip()),
-            _ => panic!("Did not find local address for route to Beckhoff {}", bh_addr)
+            _ => panic!("Did not find local address for route to Beckhoff {bh_addr}")
         }
     }
 }
