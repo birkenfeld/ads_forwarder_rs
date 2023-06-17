@@ -549,7 +549,7 @@ impl Distributor {
                                                                       DELNOTIF, is_reply, invoke_id,
                                                                       &data);
                                         if self.summarize {
-                                            println!("To Beckhoff =========================================");
+                                            info!("To Beckhoff =========================================");
                                             req_msg.summarize(InOutClientBH::OutToBeck, self.dump);
                                         }
                                         bh_sock.write_all(&req_msg.0).unwrap();
