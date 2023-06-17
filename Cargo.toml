@@ -3,7 +3,8 @@ name = "ads_forwarder"
 version = "1.2.3"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
 description = "Forwarder for Beckhoff TCP/UDP connections."
-edition = "2018"
+rust-version = "1.63"
+edition = "2021"
 
 [[bin]]
 name = "ads_forwarder_rs"
@@ -15,10 +16,9 @@ atty = "0.2.14"
 crossbeam-channel = "0.5.1"
 byteorder = "1.4.3"
 structopt = "0.3.25"
-mlzutil = "0.2.1"
-mlzlog = "0.7.0"
+mlzutil = "0.3.0"
+mlzlog = "0.8.0"
 anyhow = "1.0.20"
 log = "0.4.6"
 signal-hook = "0.3.14"
-# Rust 1.48
-systemstat = "<0.1.12"
+systemstat = "0.2"
