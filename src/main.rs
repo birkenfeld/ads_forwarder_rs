@@ -22,7 +22,7 @@
 
 use std::{net, process};
 use log::{debug, info, error};
-use structopt::StructOpt;
+use clap::Parser;
 use atty::Stream;
 
 mod scanner;
@@ -34,23 +34,24 @@ use crate::scanner::{Scan, Scanner};
 
 
 /// A forwarder for Beckhoff ADS and UDP connections.
-#[derive(StructOpt)]
+#[derive(Parser)]
+#[clap(author, version, about)]
 pub struct Options {
-    #[structopt(short="F", long="forward", help="Forward connections (only scan otherwise)")]
+    #[clap(short='F', long="forward", help="Forward connections (only scan otherwise)")]
     forward: bool,
-    #[structopt(short="U", long="udp-only", help="Forward only UDP")]
+    #[clap(short='U', long="udp-only", help="Forward only UDP")]
     udponly: bool,
-    #[structopt(short="s", long="summarize", help="Summarize TCP packets")]
+    #[clap(short='s', long="summarize", help="Summarize TCP packets")]
     summarize: bool,
-    #[structopt(short="S", long="single-ams-net-id", help="Use only one AMS Net ID towards Beckhoff")]
+    #[clap(short='S', long="single-ams-net-id", help="Use only one AMS Net ID towards Beckhoff")]
     single_ams_net_id: bool,
-    #[structopt(short="d", long="dump", help="Hexdump TCP and UDP packets")]
+    #[clap(short='d', long="dump", help="Hexdump TCP and UDP packets")]
     dump: bool,
-    #[structopt(short="v", long="verbose", help="Show debug log messages")]
+    #[clap(short='v', long="verbose", help="Show debug log messages")]
     verbose: bool,
-    #[structopt(long="local-ams-net-id")]
+    #[clap(long="local-ams-net-id")]
     local_ams_net_id: Option<AmsNetId>,
-    #[structopt(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
+    #[clap(help="Interface, IP, AMS NetID or hostname to scan (default all interfaces)")]
     target: Option<String>,
 }
 
