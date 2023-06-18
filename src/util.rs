@@ -77,6 +77,7 @@ impl AdsMessage {
         msg
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(dstid: AmsNetId, dstport: u16, srcid: AmsNetId, srcport: u16,
                cmd: u16, reply: bool, invoke_id: u32, data: &[u8]) -> AdsMessage {
         let mut v = vec![0; 2];

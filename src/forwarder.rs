@@ -41,7 +41,7 @@ use crate::util::{AdsMessage, InOutClientBH, BECKHOFF_UDP_PORT, BECKHOFF_BC_UDP_
                   DELNOTIF, NOTIF, WRITE, DEVINFO, NotifData};
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum BhType {
     BC,  // BC91xx
     CX2, // CX with TwinCat 2
@@ -514,7 +514,7 @@ impl Distributor {
                     let mut notif_req_data_to_beleted = Vec::new();
                     for notif_req_data in self.notif_req_data_to_handle_map.keys() {
                         debug!("ClientQuit notif_req_data_to_handle_map notif_req_data={notif_req_data:?}");
-                        if let Some(&handle) = self.notif_req_data_to_handle_map.get(&notif_req_data) {
+                        if let Some(&handle) = self.notif_req_data_to_handle_map.get(notif_req_data) {
                             match self.notif_handle_to_client_indices_map.get_mut(&handle) {
                                 Some(notif_indices) => {
                                     debug!("ClientQuit handle={handle} notif_indices={notif_indices:?}");
@@ -680,7 +680,7 @@ impl Distributor {
                             debug!("notif_req_data_to_handle_map add_notif_req_data0=\
                                     {add_notif_req_data0:?} handle={handle}");
                             // There is already a notification
-                            match self.notif_handle_to_client_indices_map.get_mut(&handle) {
+                            match self.notif_handle_to_client_indices_map.get_mut(handle) {
                                 Some(notif_indices) => {
                                     debug!("get_event client_msg add_notif_req \
                                             index={index} notif_indices={notif_indices:?}");
@@ -715,7 +715,7 @@ impl Distributor {
                                 }
                             }
                             // Fake a notification
-                            match self.notif_handle_to_last_notif_stream_map.get(&handle) {
+                            match self.notif_handle_to_last_notif_stream_map.get(handle) {
                                 Some(notif_data) => {
                                     info!("get_event notif_handle_to_last_notif_stream_map handle={handle}");
                                     /***************/
@@ -927,11 +927,9 @@ impl Forwarder {
 
         spawn("listener", move || {
             // main loop: send new client sockets to distributor
-            for conn in srv_sock.incoming() {
-                if let Ok(conn) = conn {
-                    if conn.set_nodelay(true).is_ok() {
-                        let _ = conn_tx.send(conn);
-                    }
+            for conn in srv_sock.incoming().flatten() {
+                if conn.set_nodelay(true).is_ok() {
+                    let _ = conn_tx.send(conn);
                 }
             }
         });
