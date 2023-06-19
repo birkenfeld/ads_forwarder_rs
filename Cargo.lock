@@ -415,9 +415,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "mlzlog"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1bc915cbac2a78dff02a7d606dc46fed55154374b6c1a3b7ce2ba11fcc76522"
+checksum = "de6a0af76766055bedaf7e2c9a2659f6f18fce998c0029da88e7e1bf4728032c"
 dependencies = [
  "ansi_term",
  "anyhow",
