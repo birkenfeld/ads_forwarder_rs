@@ -1,3 +1,35 @@
+ads-forwarder (1.3.0) jammy; urgency=medium
+
+  [ Torsten Bögershausen ]
+  * Improvements for TwinCAT3: single ams net id, notifications
+
+  [ Georg Brandl ]
+  * single-net-id: code cleanup/refactoring
+
+  [ Torsten Bögershausen ]
+  * forwarder: Remove an info for a not active client
+  * forwarder.rs: Replace 7 with DELNOTIF
+  * handle get_event no client any more ... better
+  * forwarder: Rename into invoke_id_client_req
+  * Use different invoke_ids
+  * forwarder: Fix notif_req_data_to_handle_map.remove
+
+  [ Georg Brandl ]
+  * move println!s to log messages
+  * update Rust version + dependencies
+  * switch to inline format args
+  * clippy changes
+  * migrate to Clap 3
+  * update mlzlog
+
+  [ Torsten Bögershausen ]
+  * util.rs: Make sure that all AdsMessage are debug-printed
+
+  [ Georg Brandl ]
+  * cargo update
+
+ -- Torsten Bögershausen <jenkins@frm2.tum.de>  Tue, 30 Jul 2024 13:59:39 +0200
+
 ads-forwarder (1.2.3) focal; urgency=medium
 
   * remove unneeded use of system allocator
