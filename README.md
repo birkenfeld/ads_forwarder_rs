@@ -26,7 +26,7 @@ messages (on port 48899) are also forwarded.
 How to build/install
 --------------------
 
-* Install Rust and Cargo (e.g. via rustup).  Version 1.48+ is required.
+* Install Rust and Cargo (e.g. via rustup).  Version 1.63+ is required.
 * Call `cargo build --release` to build.
 * The executable is in `target/release/ads_forwarder`.
 * The `Makefile` is very simple instructions and simply installs this to
