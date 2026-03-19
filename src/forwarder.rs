@@ -623,9 +623,9 @@ impl Distributor {
         reply.patch_source_id(client.clients_bh_id);
         reply.patch_dest_id(client.client_id);
         reply.patch_dest_port(client.client_source_port);
-         if self.summarize {
-             reply.summarize(InOutClientBH::OutToClnt, self.dump);
-         }
+        if self.summarize {
+            reply.summarize(InOutClientBH::OutToClnt, self.dump);
+        }
         if reply.0.len() == 0xae && reply.0[0x6e..0x74] == client.virtual_id.0 {
             info!("mangling NetID in 'login' query");
             reply.0[0x6e..0x74].copy_from_slice(&client.client_id.0);
