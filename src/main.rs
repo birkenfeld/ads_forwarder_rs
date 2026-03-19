@@ -47,6 +47,8 @@ pub struct Options {
     single_ams_net_id: bool,
     #[clap(short='d', long="dump", help="Hexdump TCP and UDP packets")]
     dump: bool,
+    #[clap(long="notifications", help="dump notifications")]
+    dump_notifications: bool,
     #[clap(short='v', long="verbose", help="Show debug log messages")]
     verbose: bool,
     #[clap(long="local-ams-net-id")]

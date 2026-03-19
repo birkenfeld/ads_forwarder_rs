@@ -134,6 +134,7 @@ struct Distributor {
     local_ams_net_id: AmsNetId,
     ids: Vec<u8>,
     dump: bool,
+    dump_notifications: bool,
     summarize: bool,
     single_ams_net_id: bool,
     sig: Arc<AtomicBool>,
@@ -325,6 +326,11 @@ impl Distributor {
                         // Construct a fake message with a single notification
                         let mut notif_data = NotifData::new();
                         notif_data.add_stamp(sample.timestamp, &[(sample.handle, sample.data)]);
+                        if self.dump_notifications {
+                            info!("get Notification handle={:?} timestamp={:?} data={:?}",
+                                  &sample.handle, &sample.timestamp, &sample.data);
+                        }
+
                         for &index in notif_indices {
                             if self.clients.len() > index {
                                 let client = &self.clients[index];
@@ -337,7 +343,7 @@ impl Distributor {
                                                                 is_reply,
                                                                 invoke_id,
                                                                 notif_data.data());
-                                    if self.summarize {
+                                    if self.summarize  {
                                         reply.summarize(InOutClientBH::OutToClnt, self.dump);
                                     }
                                     if let Err(err) = (&client.sock).write_all(&reply.0) {
@@ -433,7 +439,11 @@ impl Distributor {
 
                                 // if it is an add-notification message, remember the notification handles
                                 if let Some(handle) = msg.get_add_notification_reply_handle() {
-                                    debug!("get_event notif cmd={cmd} handle={handle}");
+                                    if self.dump_notifications {
+                                        info!("get_event notif cmd={cmd} handle={handle}");
+                                    } else {
+                                        debug!("get_event notif cmd={cmd} handle={handle}");
+                                    }
                                     match client_req.add_notif_req_data {
                                         Some(add_notif_req_data) => {
                                             self.notif_req_data_to_handle_map.insert(add_notif_req_data, handle);
@@ -544,6 +554,9 @@ impl Distributor {
                                                                       10000,
                                                                       DELNOTIF, is_reply, invoke_id,
                                                                       &data);
+                                        if self.dump_notifications {
+                                            info!("Delete notification handle={}", &handle);
+                                        }
                                         if self.summarize {
                                             info!("To Beckhoff =========================================");
                                             req_msg.summarize(InOutClientBH::OutToBeck, self.dump);
@@ -671,7 +684,11 @@ impl Distributor {
             let mut add_notif_req_data = None;
             if request.get_cmd() == ADDNOTIF {
                 add_notif_req_data = request.get_add_notif_req_data();
-                debug!("client_msg add_notif_req_data={add_notif_req_data:#?}");
+                if self.dump_notifications {
+                    info!("client_msg add_notif_req_data={add_notif_req_data:#?}");
+                } else {
+                    debug!("client_msg add_notif_req_data={add_notif_req_data:#?}");
+                }
 
                 /************************************/
                 if let Some(add_notif_req_data0) = add_notif_req_data {
@@ -902,6 +919,7 @@ impl Forwarder {
             bh: self.bh.clone(),
             ids: (1..255).rev().collect(),
             dump: self.opts.dump,
+            dump_notifications: self.opts.dump_notifications,
             summarize: self.opts.summarize,
             single_ams_net_id: self.opts.single_ams_net_id,
             local_ams_net_id: self.opts.local_ams_net_id.unwrap_or(FWDER_NETID),
