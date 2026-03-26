@@ -477,7 +477,7 @@ impl Distributor {
 
                                 let client = &self.clients[index];
                                 if client.used {
-                                    self.msg_from_beckhoff(msg, client);
+                                    self.msg_from_beckhoff(msg, client, true);
                                 }
                                 continue 'select;
                             },
@@ -489,7 +489,7 @@ impl Distributor {
                     }
                     for client in &self.clients {
                         if client.used && client.virtual_id == msg.get_dest_id() {
-                            self.msg_from_beckhoff(msg, client);
+                            self.msg_from_beckhoff(msg, client, false);
                             continue 'select;
                         }
                     }
@@ -632,10 +632,13 @@ impl Distributor {
     }
 
     /// Handles a message coming from the Beckhoff intended for the given client.
-    fn msg_from_beckhoff(&self, mut reply: AdsMessage, client: &ClientConn) {
+    fn msg_from_beckhoff(&self, mut reply: AdsMessage, client: &ClientConn, patch_port: bool) {
         reply.patch_source_id(client.clients_bh_id);
         reply.patch_dest_id(client.client_id);
-        reply.patch_dest_port(client.client_source_port);
+        if patch_port {
+            // patching the port is questionable... keeping it only for Single-Net-ID mode for now
+            reply.patch_dest_port(client.client_source_port);
+        }
         if self.summarize {
             reply.summarize(InOutClientBH::OutToClnt, self.dump);
         }
